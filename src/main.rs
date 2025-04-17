@@ -9,6 +9,7 @@ use actix_web::{web, App, HttpServer};
 use env_logger::Env;
 use log::info;
 use std::env;
+use std::sync::Arc;
 
 use config::Config;
 use storage::Storage;
@@ -20,13 +21,13 @@ async fn main() -> std::io::Result<()> {
 
     // Load configuration
     let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string());
-    let config = Config::load(&config_path).expect("Failed to load configuration");
+    let config = Arc::new(Config::load(&config_path).expect("Failed to load configuration"));
     let host = config.server.host.clone();
     let port = config.server.port;
     let config_data = web::Data::new(config);
 
     // Initialize storage
-    let storage = Storage::new();
+    let storage = Arc::new(Storage::new());
     let storage_data = web::Data::new(storage);
 
     info!("Starting server at http://{}:{}", host, port);
