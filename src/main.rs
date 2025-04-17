@@ -9,7 +9,11 @@ use actix_web::{web, App, HttpServer};
 use env_logger::Env;
 use log::info;
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher, EventKind};
+use std::sync::mpsc::channel;
+use std::thread;
+use std::path::Path;
 
 use config::Config;
 use storage::Storage;
@@ -21,9 +25,43 @@ async fn main() -> std::io::Result<()> {
 
     // Load configuration
     let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string());
-    let config = Arc::new(Config::load(&config_path).expect("Failed to load configuration"));
-    let host = config.server.host.clone();
-    let port = config.server.port;
+    let config = Arc::new(RwLock::new(Config::load(&config_path).expect("Failed to load configuration")));
+
+    // Spawn a thread to watch the config file and reload on change
+    {
+        let config_path = config_path.clone();
+        let config = Arc::clone(&config);
+        thread::spawn(move || {
+            let (tx, rx) = channel();
+            let mut watcher = notify::recommended_watcher(tx).expect("Failed to create watcher");
+            watcher.watch(Path::new(&config_path), RecursiveMode::NonRecursive).expect("Failed to watch config file");
+            loop {
+                match rx.recv() {
+                    Ok(event) => {
+                        if let notify::EventKind::Modify(_) = event.unwrap().kind {
+                            match Config::load(&config_path) {
+                                Ok(new_config) => {
+                                    let mut cfg = config.write().unwrap();
+                                    *cfg = new_config;
+                                    log::info!("Reloaded config from {}", config_path);
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to reload config: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Watch error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    let host = config.read().unwrap().server.host.clone();
+    let port = config.read().unwrap().server.port;
     let config_data = web::Data::new(config);
 
     // Initialize storage

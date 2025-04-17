@@ -5,6 +5,7 @@ use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use quick_xml::se::to_string;
 use log::{error, debug};
+use std::sync::RwLock;
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
@@ -117,9 +118,10 @@ struct ListObjectsResponse {
 
 pub async fn list_buckets(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
 ) -> HttpResponse {
+    let config = config.read().unwrap();
     // Verify AWS signature
     let access_key = match verify_aws_signature(&req, &config).await {
         Ok(key) => key,
@@ -185,9 +187,10 @@ pub async fn list_buckets(
 pub async fn list_objects(
     req: HttpRequest,
     path: web::Path<String>,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
 ) -> HttpResponse {
+    let config = config.read().unwrap();
     let bucket_name = path.into_inner();
     debug!("Listing objects in bucket: {}", bucket_name);
 
@@ -271,11 +274,12 @@ pub async fn list_objects(
 
 pub async fn list_objects_v2(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
     path: web::Path<String>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> Result<HttpResponse, Error> {
+    let config = config.read().unwrap();
     let bucket = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
@@ -358,10 +362,11 @@ pub async fn list_objects_v2(
 
 pub async fn get_object(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, Error> {
+    let config = config.read().unwrap();
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
@@ -379,11 +384,12 @@ pub async fn get_object(
 
 pub async fn put_object(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
     body: Bytes,
 ) -> Result<HttpResponse, Error> {
+    let config = config.read().unwrap();
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
@@ -407,10 +413,11 @@ pub async fn put_object(
 
 pub async fn create_bucket(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
+    let config = config.read().unwrap();
     let bucket = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
@@ -436,10 +443,11 @@ pub async fn create_bucket(
 
 pub async fn head_object(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
+    config: web::Data<Arc<RwLock<Config>>>,
     storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, Error> {
+    let config = config.read().unwrap();
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;

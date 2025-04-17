@@ -8,7 +8,7 @@ credentials:
     secret_access_key: "test-secret"
     permissions:
       - action: "CreateBucket"
-        resource: "foo*"
+        resource: "food"
       - action: "GetObject"
         resource: "*"
 
