@@ -49,6 +49,7 @@ async fn main() -> std::io::Result<()> {
                 web::resource("/{bucket}/{key:.*}")
                     .route(web::get().to(handlers::get_object))
                     .route(web::put().to(handlers::put_object))
+                    .route(web::head().to(handlers::head_object))
             )
             .service(
                 web::resource("/{bucket}/{key:.*}?uploadId={upload_id}&partNumber={part_number}")

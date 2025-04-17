@@ -350,4 +350,29 @@ pub async fn create_bucket(
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+pub async fn head_object(
+    req: HttpRequest,
+    config: web::Data<Arc<Config>>,
+    storage: web::Data<Arc<StorageManager>>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, Error> {
+    let (bucket, key) = path.into_inner();
+    let access_key = verify_aws_signature(&req, &config).await
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+
+    if !check_permission(&config, &access_key, "HeadObject", &format!("{}/{}", bucket, key)) {
+        return Err(actix_web::error::ErrorForbidden("Permission denied"));
+    }
+
+    let metadata = storage.head_object(&bucket, &key)
+        .map_err(|e| actix_web::error::ErrorNotFound(e.message))?;
+
+    Ok(HttpResponse::Ok()
+        .append_header(("Content-Length", metadata.size.to_string()))
+        .append_header(("Last-Modified", metadata.last_modified.to_rfc2822()))
+        .append_header(("Content-Type", metadata.content_type))
+        .append_header(("ETag", format!("\"{:x}\"", metadata.size)))
+        .finish())
 } 

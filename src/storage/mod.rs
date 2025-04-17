@@ -183,4 +183,26 @@ impl StorageManager {
 
         Ok(etag)
     }
+
+    pub fn head_object(&self, bucket: &str, key: &str) -> Result<ObjectMetadata, StorageError> {
+        let path = self.root_path.join(bucket).join(key);
+        if !path.exists() {
+            return Err(StorageError {
+                message: format!("Object {}/{} does not exist", bucket, key),
+            });
+        }
+
+        let metadata = fs::metadata(&path)?;
+        let last_modified = DateTime::from(metadata.modified()?);
+        let content_type = from_path(&path)
+            .first_or_octet_stream()
+            .to_string();
+
+        Ok(ObjectMetadata {
+            key: key.to_string(),
+            size: metadata.len(),
+            last_modified,
+            content_type,
+        })
+    }
 } 
