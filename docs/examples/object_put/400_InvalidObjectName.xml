@@ -1,0 +1,7 @@
+<Error>
+  <Code>InvalidObjectName</Code>
+  <Message>The specified object key is not valid.</Message>
+  <Key>invalid/object/key/</Key>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>HostIdExample</HostId>
+</Error>
