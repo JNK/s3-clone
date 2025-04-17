@@ -1,0 +1,22 @@
+server:
+  host: "127.0.0.1"
+  port: 8000
+  storage_path: "./storage"
+
+credentials:
+  - access_key_id: "test-key"
+    secret_access_key: "test-secret"
+    permissions:
+      - action: "*"
+        resource: "*"
+
+# You can add more credentials with different permissions
+# - access_key_id: "readonly-key"
+#   secret_access_key: "readonly-secret"
+#   permissions:
+#     - action: "GetObject"
+#       resource: "*"
+#     - action: "ListBuckets"
+#       resource: "*"
+#     - action: "ListObjects"
+#       resource: "*" 
