@@ -1,0 +1,7 @@
+<Error>
+  <Code>InvalidRange</Code>
+  <Message>The requested range is not satisfiable.</Message>
+  <ActualObjectSize>1234</ActualObjectSize>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>HostIdExample</HostId>
+</Error>
