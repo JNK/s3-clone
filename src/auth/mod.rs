@@ -6,7 +6,7 @@ use percent_encoding::percent_decode_str;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::error::{AuthError, invalid_access_key_error, signature_does_not_match_error};
+use crate::error::{invalid_access_key_error, signature_does_not_match_error};
 use crate::middleware::request_id;
 
 #[derive(Debug)]

@@ -4,13 +4,15 @@ use actix_web::{
 };
 use futures::future::{ready, Ready};
 use std::{
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 use uuid::Uuid;
+use actix_web::http::header::HeaderName;
 use log::info;
 
-const REQUEST_ID_HEADER: &str = "x-amz-request-id";
+const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-amz-request-id");
 
 pub struct RequestId;
 
@@ -43,7 +45,7 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Future = Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
     fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)

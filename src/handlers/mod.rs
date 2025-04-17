@@ -5,10 +5,15 @@ use futures::StreamExt;
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use quick_xml::se::to_string;
+use log::{error, debug};
 
-use crate::auth::{verify_aws_signature, check_permission};
+use crate::auth::{verify_aws_signature, check_permission, AuthError};
 use crate::config::Config;
-use crate::storage::{StorageManager, ObjectMetadata};
+use crate::error::{access_denied_error, no_such_bucket_error, no_such_key_error, method_not_allowed_error, internal_error};
+use crate::storage::{Storage, ObjectMetadata};
+
+pub mod bucket;
+pub mod object;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename = "ListAllMyBucketsResult")]
@@ -41,51 +46,40 @@ struct OwnerResponse {
     display_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename = "ListBucketResult")]
-struct ListObjectsResponse {
+#[derive(Serialize)]
+struct ListBucketResult {
     #[serde(rename = "Name")]
     name: String,
     #[serde(rename = "Prefix")]
-    prefix: String,
-    #[serde(rename = "Delimiter")]
-    delimiter: String,
+    prefix: Option<String>,
+    #[serde(rename = "Marker")]
+    marker: Option<String>,
     #[serde(rename = "MaxKeys")]
     max_keys: i32,
     #[serde(rename = "IsTruncated")]
     is_truncated: bool,
     #[serde(rename = "Contents")]
-    contents: Vec<ObjectResponse>,
-    #[serde(rename = "CommonPrefixes")]
-    common_prefixes: Vec<CommonPrefix>,
+    contents: Vec<Object>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct CommonPrefix {
-    #[serde(rename = "Prefix")]
-    prefix: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ObjectResponse {
+#[derive(Serialize)]
+struct Object {
     #[serde(rename = "Key")]
     key: String,
-    #[serde(rename = "Size")]
-    size: i64,
     #[serde(rename = "LastModified")]
     last_modified: String,
     #[serde(rename = "ETag")]
-    e_tag: String,
+    etag: String,
+    #[serde(rename = "Size")]
+    size: i64,
     #[serde(rename = "StorageClass")]
     storage_class: String,
-    #[serde(rename = "Owner")]
-    owner: OwnerResponse,
 }
 
 pub async fn list_buckets(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
 ) -> Result<HttpResponse, Error> {
     let access_key = verify_aws_signature(&req, &config).await
         .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
@@ -126,61 +120,95 @@ pub async fn list_buckets(
 
 pub async fn list_objects(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
     path: web::Path<String>,
-    query: web::Query<std::collections::HashMap<String, String>>,
-) -> Result<HttpResponse, Error> {
-    let bucket = path.into_inner();
-    let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+    config: web::Data<Config>,
+    storage: web::Data<Storage>,
+) -> HttpResponse {
+    let bucket_name = path.into_inner();
+    debug!("Listing objects in bucket: {}", bucket_name);
 
-    if !check_permission(&config, &access_key, "ListObjects", &bucket) {
-        return Err(actix_web::error::ErrorForbidden("Permission denied"));
+    // Verify AWS signature
+    let access_key = match verify_aws_signature(&req, &config).await {
+        Ok(key) => key,
+        Err(e) => {
+            error!("Authentication failed: {}", e.message);
+            return HttpResponse::Forbidden()
+                .content_type("application/xml")
+                .body(e.to_xml(&req));
+        }
+    };
+
+    // Check permissions
+    if !check_permission(&config, &access_key, "s3:ListBucket", &bucket_name) {
+        error!("Access denied for bucket: {}", bucket_name);
+        return HttpResponse::Forbidden()
+            .content_type("application/xml")
+            .body(access_denied_error(&req));
     }
 
-    let prefix = query.get("prefix").map(String::as_str);
-    let objects = storage.list_objects(&bucket, prefix)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+    // Check if bucket exists
+    if !storage.bucket_exists(&bucket_name) {
+        error!("Bucket not found: {}", bucket_name);
+        return HttpResponse::NotFound()
+            .content_type("application/xml")
+            .body(no_such_bucket_error(&req, &bucket_name));
+    }
 
-    let contents: Vec<ObjectResponse> = objects.into_iter()
-        .map(|obj: ObjectMetadata| {
-            ObjectResponse {
-                key: obj.key,
-                size: obj.size as i64,
-                last_modified: obj.last_modified.to_rfc3339(),
-                e_tag: format!("\"{:x}\"", obj.size),
-                storage_class: "STANDARD".to_string(),
-                owner: OwnerResponse {
-                    id: "".to_string(),
-                    display_name: "".to_string(),
-                },
-            }
+    // Get query parameters
+    let query: std::collections::HashMap<String, String> = req.query_string()
+        .split('&')
+        .filter_map(|pair| {
+            let mut parts = pair.split('=');
+            let key = parts.next()?;
+            let value = parts.next()?;
+            Some((key.to_string(), value.to_string()))
         })
         .collect();
 
-    let response = ListObjectsResponse {
-        name: bucket.clone(),
-        prefix: prefix.unwrap_or("").to_string(),
-        delimiter: "/".to_string(),
-        max_keys: 1000,
-        is_truncated: false,
-        contents,
-        common_prefixes: Vec::new(),
-    };
+    let prefix = query.get("prefix").cloned();
+    let marker = query.get("marker").cloned();
+    let max_keys = query.get("max-keys")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1000);
 
-    let xml = to_string(&response)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+    // List objects
+    match storage.list_objects(&bucket_name, prefix.as_deref(), marker.as_deref(), max_keys) {
+        Ok(objects) => {
+            let result = ListBucketResult {
+                name: bucket_name,
+                prefix,
+                marker,
+                max_keys,
+                is_truncated: false, // TODO: Implement pagination
+                contents: objects.into_iter().map(|obj| Object {
+                    key: obj.key,
+                    last_modified: obj.last_modified,
+                    etag: obj.etag,
+                    size: obj.size as i64,
+                    storage_class: "STANDARD".to_string(),
+                }).collect(),
+            };
 
-    Ok(HttpResponse::Ok()
-        .content_type("application/xml")
-        .body(xml))
+            let mut xml = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
+            xml.push_str(&to_string(&result).unwrap_or_else(|_| "".to_string()));
+
+            HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(xml)
+        }
+        Err(e) => {
+            error!("Error listing objects: {}", e);
+            HttpResponse::InternalServerError()
+                .content_type("application/xml")
+                .body(internal_error(&req, &e.to_string()))
+        }
+    }
 }
 
 pub async fn list_objects_v2(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<String>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> Result<HttpResponse, Error> {
@@ -258,7 +286,7 @@ pub async fn list_objects_v2(
 pub async fn get_object(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, Error> {
     let (bucket, key) = path.into_inner();
@@ -279,7 +307,7 @@ pub async fn get_object(
 pub async fn put_object(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
     body: Bytes,
 ) -> Result<HttpResponse, Error> {
@@ -307,7 +335,7 @@ pub async fn put_object(
 pub async fn upload_part(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
     query: web::Query<std::collections::HashMap<String, String>>,
     body: Bytes,
@@ -335,7 +363,7 @@ pub async fn upload_part(
 pub async fn create_bucket(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
     let bucket = path.into_inner();
@@ -355,7 +383,7 @@ pub async fn create_bucket(
 pub async fn head_object(
     req: HttpRequest,
     config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<StorageManager>>,
+    storage: web::Data<Arc<Storage>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, Error> {
     let (bucket, key) = path.into_inner();

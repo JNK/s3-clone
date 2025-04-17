@@ -104,7 +104,7 @@ pub async fn list_objects(
                     key: obj.key,
                     last_modified: obj.last_modified,
                     etag: obj.etag,
-                    size: obj.size,
+                    size: obj.size as i64,
                     storage_class: "STANDARD".to_string(),
                 }).collect(),
             };
