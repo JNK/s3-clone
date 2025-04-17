@@ -46,9 +46,12 @@ impl Storage {
         bucket_path.exists() && bucket_path.is_dir()
     }
 
-    pub fn create_bucket(&self, bucket_name: &str) -> Result<(), StorageError> {
-        let bucket_path = self.base_path.join(bucket_name);
-        fs::create_dir_all(bucket_path)?;
+    pub fn create_bucket(&self, bucket: &str) -> Result<(), StorageError> {
+        let bucket_path = self.base_path.join(bucket);
+        if bucket_path.exists() {
+            return Err(StorageError::InvalidPath(format!("Bucket {} already exists", bucket)));
+        }
+        fs::create_dir_all(&bucket_path)?;
         Ok(())
     }
 

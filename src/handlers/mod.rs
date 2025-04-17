@@ -1,7 +1,6 @@
 use actix_web::{web, HttpRequest, HttpResponse, Error};
 use bytes::Bytes;
 use chrono::Utc;
-use futures::StreamExt;
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use quick_xml::se::to_string;

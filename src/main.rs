@@ -21,13 +21,15 @@ async fn main() -> std::io::Result<()> {
     // Load configuration
     let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string());
     let config = Config::load(&config_path).expect("Failed to load configuration");
+    let host = config.server.host.clone();
+    let port = config.server.port;
     let config_data = web::Data::new(config);
 
     // Initialize storage
     let storage = Storage::new();
     let storage_data = web::Data::new(storage);
 
-    info!("Starting server at http://127.0.0.1:8080");
+    info!("Starting server at http://{}:{}", host, port);
 
     HttpServer::new(move || {
         App::new()
@@ -35,18 +37,26 @@ async fn main() -> std::io::Result<()> {
             .app_data(config_data.clone())
             .app_data(storage_data.clone())
             .service(
-                web::scope("/{bucket}")
-                    .route("", web::get().to(handlers::bucket::list_objects))
-                    .service(
-                        web::scope("/{key}")
-                            .route("", web::get().to(handlers::object::get_object))
-                            .route("", web::put().to(handlers::object::put_object))
-                            .route("", web::delete().to(handlers::object::delete_object))
-                            .route("", web::head().to(handlers::object::head_object)),
-                    ),
+                web::resource("/")
+                    .route(web::get().to(handlers::list_buckets))
+            )
+            .service(
+                web::resource("/{bucket}")
+                    .route(web::get().to(handlers::list_objects))
+                    .route(web::put().to(handlers::create_bucket))
+            )
+            .service(
+                web::resource("/{bucket}?list-type=2")
+                    .route(web::get().to(handlers::list_objects_v2))
+            )
+            .service(
+                web::resource("/{bucket}/{key:.*}")
+                    .route(web::get().to(handlers::get_object))
+                    .route(web::put().to(handlers::put_object))
+                    .route(web::head().to(handlers::head_object))
             )
     })
-    .bind("127.0.0.1:8080")?
+    .bind(format!("{}:{}", host, port))?
     .run()
     .await
 } 
