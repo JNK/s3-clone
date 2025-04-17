@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse, HttpRequest};
-use actix_web::http::header::{HeaderValue, EntityTag};
+use actix_web::http::header::EntityTag;
 use bytes::Bytes;
 use log::{error, debug};
 use std::str::FromStr;
@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
-use crate::error::{access_denied_error, no_such_bucket_error, no_such_key_error, method_not_allowed_error, internal_error};
+use crate::error::{access_denied_error, no_such_bucket_error, no_such_key_error, internal_error};
 use crate::storage::Storage;
 
 pub async fn get_object(

@@ -7,10 +7,10 @@ use serde::{Serialize, Deserialize};
 use quick_xml::se::to_string;
 use log::{error, debug};
 
-use crate::auth::{verify_aws_signature, check_permission, AuthError};
+use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
-use crate::error::{access_denied_error, no_such_bucket_error, no_such_key_error, method_not_allowed_error, internal_error};
-use crate::storage::{Storage, ObjectMetadata};
+use crate::error::{access_denied_error, no_such_bucket_error, internal_error};
+use crate::storage::Storage;
 
 pub mod bucket;
 pub mod object;

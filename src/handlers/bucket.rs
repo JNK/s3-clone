@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse, HttpRequest};
-use log::{info, error, debug};
+use log::{error, debug};
 use quick_xml::se::to_string;
 use serde::Serialize;
 
