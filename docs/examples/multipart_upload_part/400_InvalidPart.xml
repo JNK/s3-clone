@@ -1,0 +1,7 @@
+<Error>
+  <Code>InvalidPart</Code>
+  <Message>The specified part is not valid. Part number may be missing or part size is too small.</Message>
+  <PartNumber>1</PartNumber>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>HostIdExample</HostId>
+</Error>
