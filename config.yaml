@@ -1,0 +1,58 @@
+# Storage configuration: where to store buckets and objects
+storage:
+  location: "/var/lib/s3-clone"
+
+# Default region for new buckets (if not specified in request)
+region:
+  default: "de-muc-01"
+
+# Logging configuration: set levels per component (server, storage, auth, etc.)
+logging:
+  format: "json"  # or "text"
+  levels:
+    server: "info"
+    storage: "warn"
+    auth: "debug"
+
+# Server configuration
+server:
+  http:
+    enabled: true
+    port: 9000
+  https:
+    enabled: true
+    port: 9443
+    letsencrypt:
+      enabled: true
+      email: "admin@example.com"
+      domains: ["s3.local"]
+      do_token: "DO_API_TOKEN"
+
+# Credentials: IAM-like permissions
+credentials:
+  - access_key: "AKIA..."
+    secret_key: "SECRET..."
+    permissions:
+      - action: "Create*"
+        resource: "*"
+      - action: "DeleteObject"
+        resource: "private-bucket/*"
+
+# Bucket ACLs: not linked to credentials
+default_acls:
+  public: false
+  allowed_ips: []
+
+default_cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "PUT"]
+
+# Multipart upload settings
+multipart:
+  expiry_seconds: 86400  # 24 hours
+
+# Config reload triggers
+config_reload:
+  sighup: true
+  api: true
+  fsevents: true 

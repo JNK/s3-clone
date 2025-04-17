@@ -120,9 +120,9 @@ See `/docs/` for detailed documentation and `/docs/examples/` for error XML exam
 ---
 
 ### 3. Config Management
-- [ ] Define YAML config schema.
+- [x] Define YAML config schema.
 - [ ] Implement config loader with hot-reloading.
-- [ ] **Validate config on load and reload** (required fields, types, value ranges, etc.)
+- [x] **Validate config on load and reload** (required fields, types, value ranges, etc.)
 
 ---
 
@@ -309,14 +309,13 @@ credentials:
         resource: "private-bucket/*"
 
 # Bucket ACLs: not linked to credentials
-bucket_acls:
-  - bucket: "public-bucket"
-    public: true
-    cors:
-      allowed_origins: ["*"]
-      allowed_methods: ["GET", "PUT"]
-  - bucket: "private-bucket"
-    allowed_ips: ["192.168.1.0/24"]
+default_acls:
+  public: false
+  allowed_ips: []
+
+default_cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "PUT"]
 
 # Multipart upload settings
 multipart:
