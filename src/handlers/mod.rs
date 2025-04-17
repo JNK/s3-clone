@@ -76,46 +76,111 @@ struct Object {
     storage_class: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CommonPrefix {
+    #[serde(rename = "Prefix")]
+    prefix: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ObjectResponse {
+    #[serde(rename = "Key")]
+    key: String,
+    #[serde(rename = "Size")]
+    size: i64,
+    #[serde(rename = "LastModified")]
+    last_modified: String,
+    #[serde(rename = "ETag")]
+    e_tag: String,
+    #[serde(rename = "StorageClass")]
+    storage_class: String,
+    #[serde(rename = "Owner")]
+    owner: OwnerResponse,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ListObjectsResponse {
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Prefix")]
+    prefix: String,
+    #[serde(rename = "Delimiter")]
+    delimiter: String,
+    #[serde(rename = "MaxKeys")]
+    max_keys: i32,
+    #[serde(rename = "IsTruncated")]
+    is_truncated: bool,
+    #[serde(rename = "Contents")]
+    contents: Vec<ObjectResponse>,
+    #[serde(rename = "CommonPrefixes")]
+    common_prefixes: Vec<CommonPrefix>,
+}
+
 pub async fn list_buckets(
     req: HttpRequest,
-    config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<Storage>>,
-) -> Result<HttpResponse, Error> {
-    let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+    config: web::Data<Config>,
+    storage: web::Data<Storage>,
+) -> HttpResponse {
+    // Verify AWS signature
+    let access_key = match verify_aws_signature(&req, &config).await {
+        Ok(key) => key,
+        Err(e) => {
+            error!("Authentication failed: {}", e.to_string());
+            return HttpResponse::Forbidden()
+                .content_type("application/xml")
+                .body(e.to_xml(&req));
+        }
+    };
 
-    if !check_permission(&config, &access_key, "ListBuckets", "*") {
-        return Err(actix_web::error::ErrorForbidden("Permission denied"));
+    // Check permissions
+    if !check_permission(&config, &access_key, "s3:ListAllMyBuckets", "*") {
+        error!("Access denied for listing buckets");
+        return HttpResponse::Forbidden()
+            .content_type("application/xml")
+            .body(access_denied_error(&req));
     }
 
-    let buckets = storage.list_buckets()
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+    // List buckets
+    match storage.list_buckets() {
+        Ok(buckets) => {
+            let owner = OwnerResponse {
+                id: access_key.clone(),
+                display_name: access_key,
+            };
 
-    let owner = OwnerResponse {
-        id: access_key.clone(),
-        display_name: access_key,
-    };
+            let buckets: Vec<BucketResponse> = buckets.into_iter()
+                .map(|name| BucketResponse {
+                    name,
+                    creation_date: Utc::now().to_rfc3339(),
+                })
+                .collect();
 
-    let buckets: Vec<BucketResponse> = buckets.into_iter()
-        .map(|name| {
-            BucketResponse {
-                name,
-                creation_date: Utc::now().to_rfc3339(),
-            }
-        })
-        .collect();
+            let response = ListBucketsResponse {
+                owner,
+                buckets: BucketsResponse { buckets },
+            };
 
-    let response = ListBucketsResponse {
-        owner,
-        buckets: BucketsResponse { buckets },
-    };
+            let xml = match to_string(&response) {
+                Ok(xml) => xml,
+                Err(e) => {
+                    error!("Error serializing response: {}", e);
+                    return HttpResponse::InternalServerError()
+                        .content_type("application/xml")
+                        .body(internal_error(&req, &e.to_string()));
+                }
+            };
 
-    let xml = to_string(&response)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/xml")
-        .body(xml))
+            HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(xml)
+        }
+        Err(e) => {
+            error!("Error listing buckets: {}", e);
+            HttpResponse::InternalServerError()
+                .content_type("application/xml")
+                .body(internal_error(&req, &e.to_string()))
+        }
+    }
 }
 
 pub async fn list_objects(
@@ -131,7 +196,7 @@ pub async fn list_objects(
     let access_key = match verify_aws_signature(&req, &config).await {
         Ok(key) => key,
         Err(e) => {
-            error!("Authentication failed: {}", e.message);
+            error!("Authentication failed: {}", e.to_string());
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
                 .body(e.to_xml(&req));
@@ -214,7 +279,7 @@ pub async fn list_objects_v2(
 ) -> Result<HttpResponse, Error> {
     let bucket = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
 
     if !check_permission(&config, &access_key, "ListObjectsV2", &bucket) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
@@ -252,11 +317,19 @@ pub async fn list_objects_v2(
                 });
             }
         } else {
+            // Parse last_modified from string (UNIX timestamp) to RFC3339
+            let last_modified_rfc3339 = match obj.last_modified.parse::<u64>() {
+                Ok(secs) => {
+                    use chrono::{TimeZone, Utc};
+                    Utc.timestamp_opt(secs as i64, 0).single().map(|dt| dt.to_rfc3339()).unwrap_or(obj.last_modified.clone())
+                },
+                Err(_) => obj.last_modified.clone(),
+            };
             contents.push(ObjectResponse {
                 key: obj.key,
                 size: obj.size as i64,
-                last_modified: obj.last_modified.to_rfc3339(),
-                e_tag: format!("\"{:x}\"", obj.size),
+                last_modified: last_modified_rfc3339,
+                e_tag: obj.etag,
                 storage_class: "STANDARD".to_string(),
                 owner: OwnerResponse {
                     id: access_key.clone(),
@@ -292,17 +365,17 @@ pub async fn get_object(
 ) -> Result<HttpResponse, Error> {
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
 
     if !check_permission(&config, &access_key, "GetObject", &format!("{}/{}", bucket, key)) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
-    let stream = storage.get_object(bucket, key).await
-        .map_err(|e| actix_web::error::ErrorNotFound(e.message))?;
+    let data = storage.get_object(&bucket, &key)
+        .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
 
     Ok(HttpResponse::Ok()
-        .streaming(stream.map(|chunk| chunk.map(Bytes::from).map_err(|e| actix_web::error::ErrorInternalServerError(e)))))
+        .body(data))
 }
 
 pub async fn put_object(
@@ -314,47 +387,19 @@ pub async fn put_object(
 ) -> Result<HttpResponse, Error> {
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
 
     if !check_permission(&config, &access_key, "PutObject", &format!("{}/{}", bucket, key)) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
-    storage.put_object(&bucket, &key, &body)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+    storage.put_object(&bucket, &key, body.to_vec())
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
     hasher.update(&body);
     let etag = hex::encode(hasher.finalize());
-
-    Ok(HttpResponse::Ok()
-        .append_header(("ETag", format!("\"{}\"", etag)))
-        .finish())
-}
-
-pub async fn upload_part(
-    req: HttpRequest,
-    config: web::Data<Arc<Config>>,
-    storage: web::Data<Arc<Storage>>,
-    path: web::Path<(String, String)>,
-    query: web::Query<std::collections::HashMap<String, String>>,
-    body: Bytes,
-) -> Result<HttpResponse, Error> {
-    let (bucket, key) = path.into_inner();
-    let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
-
-    if !check_permission(&config, &access_key, "UploadPart", &format!("{}/{}", bucket, key)) {
-        return Err(actix_web::error::ErrorForbidden("Permission denied"));
-    }
-
-    let part_number = query.get("partNumber")
-        .and_then(|s| s.parse::<u32>().ok())
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing or invalid partNumber"))?;
-
-    let etag = storage.upload_part(&bucket, &key, part_number, &body)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
 
     Ok(HttpResponse::Ok()
         .append_header(("ETag", format!("\"{}\"", etag)))
@@ -369,14 +414,14 @@ pub async fn create_bucket(
 ) -> Result<HttpResponse, Error> {
     let bucket = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
 
     if !check_permission(&config, &access_key, "CreateBucket", &bucket) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
     storage.create_bucket(&bucket)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -389,19 +434,25 @@ pub async fn head_object(
 ) -> Result<HttpResponse, Error> {
     let (bucket, key) = path.into_inner();
     let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
 
     if !check_permission(&config, &access_key, "HeadObject", &format!("{}/{}", bucket, key)) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
     let metadata = storage.head_object(&bucket, &key)
-        .map_err(|e| actix_web::error::ErrorNotFound(e.message))?;
+        .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
 
     Ok(HttpResponse::Ok()
         .append_header(("Content-Length", metadata.size.to_string()))
-        .append_header(("Last-Modified", metadata.last_modified.to_rfc2822()))
-        .append_header(("Content-Type", metadata.content_type))
-        .append_header(("ETag", format!("\"{:x}\"", metadata.size)))
+        .append_header(("Last-Modified", {
+            use chrono::{TimeZone, Utc};
+            match metadata.last_modified.parse::<u64>() {
+                Ok(secs) => Utc.timestamp_opt(secs as i64, 0).single().map(|dt| dt.to_rfc2822()).unwrap_or(metadata.last_modified.clone()),
+                Err(_) => metadata.last_modified.clone(),
+            }
+        }))
+        .append_header(("Content-Type", metadata.content_type.unwrap_or_else(|| "application/octet-stream".to_string())))
+        .append_header(("ETag", metadata.etag))
         .finish())
 } 

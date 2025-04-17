@@ -170,4 +170,18 @@ impl Storage {
             content_type,
         })
     }
+
+    pub fn list_buckets(&self) -> Result<Vec<String>, StorageError> {
+        let mut buckets = Vec::new();
+        for entry in fs::read_dir(&self.base_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name() {
+                    buckets.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        Ok(buckets)
+    }
 } 
