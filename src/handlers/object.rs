@@ -25,7 +25,7 @@ pub async fn get_object(
             error!("Authentication failed: {}", e.message);
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
-                .body(e.to_xml());
+                .body(e.to_xml(&req));
         }
     };
 
@@ -101,7 +101,7 @@ pub async fn put_object(
             error!("Authentication failed: {}", e.message);
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
-                .body(e.to_xml());
+                .body(e.to_xml(&req));
         }
     };
 
@@ -161,7 +161,7 @@ pub async fn delete_object(
             error!("Authentication failed: {}", e.message);
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
-                .body(e.to_xml());
+                .body(e.to_xml(&req));
         }
     };
 
@@ -209,7 +209,7 @@ pub async fn head_object(
             error!("Authentication failed: {}", e.message);
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
-                .body(e.to_xml());
+                .body(e.to_xml(&req));
         }
     };
 

@@ -54,7 +54,7 @@ pub async fn list_objects(
             error!("Authentication failed: {}", e.message);
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
-                .body(e.to_xml());
+                .body(e.to_xml(&req));
         }
     };
 

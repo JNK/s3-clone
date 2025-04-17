@@ -3,9 +3,11 @@ use actix_web::HttpRequest;
 use std::collections::HashMap;
 use log::debug;
 use percent_encoding::percent_decode_str;
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::{AuthError, invalid_access_key_error, signature_does_not_match_error};
+use crate::middleware::request_id;
 
 #[derive(Debug)]
 pub struct AuthError {
@@ -22,11 +24,11 @@ impl std::fmt::Display for AuthError {
 impl std::error::Error for AuthError {}
 
 impl AuthError {
-    pub fn to_xml(&self) -> String {
+    pub fn to_xml(&self, req: &HttpRequest) -> String {
         match self.code.as_str() {
-            "InvalidAccessKeyId" => invalid_access_key_error(),
-            "SignatureDoesNotMatch" => signature_does_not_match_error(),
-            _ => invalid_access_key_error(), // Default to invalid access key for other auth errors
+            "InvalidAccessKeyId" => invalid_access_key_error(req),
+            "SignatureDoesNotMatch" => signature_does_not_match_error(req),
+            _ => invalid_access_key_error(req), // Default to invalid access key for other auth errors
         }
     }
 }

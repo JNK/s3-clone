@@ -1,28 +1,30 @@
 [package]
 name = "s3-clone"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-actix-web = "4.5.1"
-tokio = { version = "1.36.0", features = ["full"] }
-serde = { version = "1.0.197", features = ["derive"] }
-serde_yaml = "0.9.32"
+actix-web = "4.4"
+actix-rt = "2.9"
+env_logger = "0.10"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+quick-xml = { version = "0.31", features = ["serialize"] }
+uuid = { version = "1.4", features = ["v4"] }
+aws-credential-types = "0.56"
+percent-encoding = "2.3"
+futures = "0.3"
 aws-smithy-http = "0.60.7"
 aws-smithy-types = "1.1.7"
 aws-sdk-s3 = "1.17.0"
 aws-config = "1.1.7"
-aws-credential-types = "1.1.7"
 aws-sigv4 = "1.1.7"
 chrono = "0.4.35"
-env_logger = "0.11.3"
-log = "0.4.21"
 bytes = "1.5.0"
-futures = "0.3.30"
 sha2 = "0.10.8"
 hex = "0.4.3"
 walkdir = "2.5.0"
 mime_guess = "2.0.4"
 async-stream = "0.3.5"
-thiserror = "1.0.57"
-quick-xml = { version = "0.31.0", features = ["serialize"] } 
+thiserror = "1.0.57" 
