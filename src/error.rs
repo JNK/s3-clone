@@ -115,4 +115,15 @@ pub fn internal_error(req: &HttpRequest, message: &str) -> String {
         None,
         &request_id,
     ).to_xml()
+}
+
+pub fn bucket_already_exists_error(req: &HttpRequest, bucket: &str) -> String {
+    let request_id = crate::middleware::request_id::get_request_id(req)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    ErrorResponse::new(
+        "BucketAlreadyExists",
+        "The requested bucket name is not available.",
+        Some(bucket),
+        &request_id,
+    ).to_xml()
 } 

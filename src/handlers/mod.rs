@@ -419,10 +419,19 @@ pub async fn create_bucket(
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
-    storage.create_bucket(&bucket)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-    Ok(HttpResponse::Ok().finish())
+    match storage.create_bucket(&bucket) {
+        Ok(_) => Ok(HttpResponse::Ok().finish()),
+        Err(e) => {
+            use crate::storage::StorageError;
+            if let StorageError::BucketAlreadyExists(_) = e {
+                // Bucket already exists
+                return Ok(HttpResponse::Conflict()
+                    .content_type("application/xml")
+                    .body(crate::error::bucket_already_exists_error(&req, &bucket)));
+            }
+            Err(actix_web::error::ErrorInternalServerError(e.to_string()))
+        }
+    }
 }
 
 pub async fn head_object(

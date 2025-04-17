@@ -17,6 +17,8 @@ pub enum StorageError {
     NotFound(String),
     #[error("Invalid path: {0}")]
     InvalidPath(String),
+    #[error("Bucket alread exists: {0}")]
+    BucketAlreadyExists(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,7 +51,7 @@ impl Storage {
     pub fn create_bucket(&self, bucket: &str) -> Result<(), StorageError> {
         let bucket_path = self.base_path.join(bucket);
         if bucket_path.exists() {
-            return Err(StorageError::InvalidPath(format!("Bucket {} already exists", bucket)));
+            return Err(StorageError::BucketAlreadyExists(format!("Bucket {} already exists", bucket)));
         }
         fs::create_dir_all(&bucket_path)?;
         Ok(())

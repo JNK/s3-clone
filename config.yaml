@@ -7,8 +7,11 @@ credentials:
   - access_key_id: "test-key"
     secret_access_key: "test-secret"
     permissions:
-      - action: "*"
+      - action: "CreateBucket"
+        resource: "foo*"
+      - action: "GetObject"
         resource: "*"
+
 
 # You can add more credentials with different permissions
 # - access_key_id: "readonly-key"
