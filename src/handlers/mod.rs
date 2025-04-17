@@ -29,18 +29,42 @@ struct OwnerResponse {
 
 #[derive(Serialize)]
 struct ListObjectsResponse {
+    #[serde(rename = "Name")]
     name: String,
+    #[serde(rename = "Prefix")]
     prefix: String,
+    #[serde(rename = "Delimiter")]
+    delimiter: String,
+    #[serde(rename = "MaxKeys")]
+    max_keys: i32,
+    #[serde(rename = "IsTruncated")]
+    is_truncated: bool,
+    #[serde(rename = "Contents")]
     contents: Vec<ObjectResponse>,
+    #[serde(rename = "CommonPrefixes")]
+    common_prefixes: Vec<CommonPrefix>,
 }
 
 #[derive(Serialize)]
 struct ObjectResponse {
+    #[serde(rename = "Key")]
     key: String,
+    #[serde(rename = "Size")]
     size: i64,
+    #[serde(rename = "LastModified")]
     last_modified: String,
+    #[serde(rename = "ETag")]
     e_tag: String,
+    #[serde(rename = "StorageClass")]
     storage_class: String,
+    #[serde(rename = "Owner")]
+    owner: OwnerResponse,
+}
+
+#[derive(Serialize)]
+struct CommonPrefix {
+    #[serde(rename = "Prefix")]
+    prefix: String,
 }
 
 pub async fn list_buckets(
@@ -107,6 +131,10 @@ pub async fn list_objects(
                 last_modified: obj.last_modified.to_rfc3339(),
                 e_tag: format!("\"{:x}\"", obj.size),
                 storage_class: "STANDARD".to_string(),
+                owner: OwnerResponse {
+                    id: "".to_string(),
+                    display_name: "".to_string(),
+                },
             }
         })
         .collect();
@@ -114,7 +142,11 @@ pub async fn list_objects(
     let response = ListObjectsResponse {
         name: bucket.clone(),
         prefix: prefix.unwrap_or("").to_string(),
+        delimiter: "/".to_string(),
+        max_keys: 1000,
+        is_truncated: false,
         contents,
+        common_prefixes: Vec::new(),
     };
 
     Ok(HttpResponse::Ok().json(response))
@@ -136,25 +168,58 @@ pub async fn list_objects_v2(
     }
 
     let prefix = query.get("prefix").map(String::as_str);
-    let objects = storage.list_objects(&bucket, prefix)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+    let delimiter = query.get("delimiter").map(String::as_str).unwrap_or("/");
+    let max_keys = query.get("max-keys")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1000);
 
-    let contents: Vec<ObjectResponse> = objects.into_iter()
-        .map(|obj: ObjectMetadata| {
-            ObjectResponse {
+    let objects = storage.list_objects(&bucket, prefix)
+        .map_err(|e| {
+            log::error!("Failed to list objects: {}", e);
+            actix_web::error::ErrorInternalServerError(e.message)
+        })?;
+
+    let mut contents = Vec::new();
+    let mut common_prefixes = Vec::new();
+    let mut seen_prefixes = std::collections::HashSet::new();
+
+    for obj in objects {
+        if let Some(prefix) = prefix {
+            if !obj.key.starts_with(prefix) {
+                continue;
+            }
+        }
+
+        if let Some(pos) = obj.key.find(delimiter) {
+            let common_prefix = obj.key[..pos + delimiter.len()].to_string();
+            if seen_prefixes.insert(common_prefix.clone()) {
+                common_prefixes.push(CommonPrefix {
+                    prefix: common_prefix,
+                });
+            }
+        } else {
+            contents.push(ObjectResponse {
                 key: obj.key,
                 size: obj.size as i64,
                 last_modified: obj.last_modified.to_rfc3339(),
                 e_tag: format!("\"{:x}\"", obj.size),
                 storage_class: "STANDARD".to_string(),
-            }
-        })
-        .collect();
+                owner: OwnerResponse {
+                    id: "".to_string(),
+                    display_name: "".to_string(),
+                },
+            });
+        }
+    }
 
     let response = ListObjectsResponse {
         name: bucket.clone(),
         prefix: prefix.unwrap_or("").to_string(),
+        delimiter: delimiter.to_string(),
+        max_keys,
+        is_truncated: false,
         contents,
+        common_prefixes,
     };
 
     Ok(HttpResponse::Ok().json(response))
@@ -235,4 +300,24 @@ pub async fn upload_part(
     Ok(HttpResponse::Ok()
         .append_header(("ETag", format!("\"{}\"", etag)))
         .finish())
+}
+
+pub async fn create_bucket(
+    req: HttpRequest,
+    config: web::Data<Arc<Config>>,
+    storage: web::Data<Arc<StorageManager>>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+    let bucket = path.into_inner();
+    let access_key = verify_aws_signature(&req, &config).await
+        .map_err(|e| actix_web::error::ErrorUnauthorized(e.message))?;
+
+    if !check_permission(&config, &access_key, "CreateBucket", &bucket) {
+        return Err(actix_web::error::ErrorForbidden("Permission denied"));
+    }
+
+    storage.create_bucket(&bucket)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.message))?;
+
+    Ok(HttpResponse::Ok().finish())
 } 

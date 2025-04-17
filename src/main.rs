@@ -39,6 +39,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::resource("/{bucket}")
                     .route(web::get().to(handlers::list_objects))
+                    .route(web::put().to(handlers::create_bucket))
             )
             .service(
                 web::resource("/{bucket}?list-type=2")

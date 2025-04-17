@@ -57,6 +57,17 @@ impl StorageManager {
         Ok(StorageManager { root_path })
     }
 
+    pub fn create_bucket(&self, bucket: &str) -> Result<(), StorageError> {
+        let bucket_path = self.root_path.join(bucket);
+        if bucket_path.exists() {
+            return Err(StorageError {
+                message: format!("Bucket {} already exists", bucket),
+            });
+        }
+        fs::create_dir_all(&bucket_path)?;
+        Ok(())
+    }
+
     pub fn list_buckets(&self) -> Result<Vec<String>, StorageError> {
         let mut buckets = Vec::new();
         for entry in fs::read_dir(&self.root_path)? {
@@ -79,14 +90,18 @@ impl StorageManager {
         }
 
         let mut objects = Vec::new();
-        for entry in WalkDir::new(&bucket_path).min_depth(1) {
-            let entry = entry?;
+        for entry in WalkDir::new(&bucket_path).min_depth(1).into_iter().filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
                 let path = entry.path();
-                let key = path.strip_prefix(&bucket_path)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
+                let relative_path = path.strip_prefix(&bucket_path)
+                    .map_err(|_| StorageError {
+                        message: "Failed to strip prefix from path".to_string(),
+                    })?;
+                
+                let key = relative_path.to_str()
+                    .ok_or_else(|| StorageError {
+                        message: "Path contains invalid UTF-8".to_string(),
+                    })?
                     .replace("\\", "/");
 
                 if let Some(prefix) = prefix {

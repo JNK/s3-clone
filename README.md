@@ -155,7 +155,3 @@ Each bucket is a directory under the storage path, and objects are stored with t
 - No support for object versioning
 - No support for object tagging
 - Basic authentication implementation
-
-## License
-
-MIT License 
