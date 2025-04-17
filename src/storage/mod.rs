@@ -8,7 +8,6 @@ use async_stream::try_stream;
 use futures::Stream;
 use tokio::fs::File as TokioFile;
 use tokio::io::AsyncReadExt;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct StorageError {
