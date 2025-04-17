@@ -126,4 +126,15 @@ pub fn bucket_already_exists_error(req: &HttpRequest, bucket: &str) -> String {
         Some(bucket),
         &request_id,
     ).to_xml()
+}
+
+pub fn expired_presigned_url_error(req: &HttpRequest) -> String {
+    let request_id = crate::middleware::request_id::get_request_id(req)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    ErrorResponse::new(
+        "AccessDenied",
+        "Request has expired",
+        None,
+        &request_id,
+    ).to_xml()
 } 

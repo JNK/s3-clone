@@ -9,7 +9,7 @@ use sha2::Sha256;
 use hex::encode as hex_encode;
 
 use crate::config::Config;
-use crate::error::{invalid_access_key_error, signature_does_not_match_error};
+use crate::error::{invalid_access_key_error, signature_does_not_match_error, expired_presigned_url_error};
 
 #[derive(Debug)]
 pub struct AuthError {
@@ -30,6 +30,7 @@ impl AuthError {
         match self.code.as_str() {
             "InvalidAccessKeyId" => invalid_access_key_error(req),
             "SignatureDoesNotMatch" => signature_does_not_match_error(req),
+            "ExpiredPresignedUrl" | "AccessDenied" => expired_presigned_url_error(req),
             _ => invalid_access_key_error(req), // Default to invalid access key for other auth errors
         }
     }
@@ -52,8 +53,6 @@ pub async fn verify_aws_signature(
 
     if let (Some(expires), Some(amz_date)) = (query.get("X-Amz-Expires"), query.get("X-Amz-Date")) {
         let expires = expires.parse::<i64>();
-
-        // Try RFC3339, then AWS format, always convert to Utc
         let amz_date_parsed = NaiveDateTime::parse_from_str(amz_date, "%Y%m%dT%H%M%SZ")
             .map(|dt| dt.and_utc());
         match (expires, amz_date_parsed) {
@@ -64,8 +63,8 @@ pub async fn verify_aws_signature(
                 if now > expiry_time {
                     log::info!("Presigned URL expired: now = {:?}, expiry_time = {:?}", now, expiry_time);
                     return Err(AuthError {
-                        message: "Request has expired".to_string(),
-                        code: "AccessDenied".to_string(),
+                        message: String::new(),
+                        code: "ExpiredPresignedUrl".to_string(),
                     });
                 }
             }
