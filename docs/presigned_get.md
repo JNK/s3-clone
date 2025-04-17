@@ -23,7 +23,6 @@ Host: localhost:9000
 - (Other AWS S3 presign params as needed)
 
 ### Optional Query Parameters
-- `X-Amz-Security-Token`: For temporary credentials
 - `X-Amz-Expires`: Expiry in seconds (default: 3600, max: configurable)
 - `X-Amz-Source-IP`: Restrict to a specific IP (if supported)
 
