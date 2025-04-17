@@ -126,7 +126,6 @@ pub async fn list_buckets(
     let access_key = match verify_aws_signature(&req, &config).await {
         Ok(key) => key,
         Err(e) => {
-            error!("Authentication failed: {}", e.to_string());
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
                 .body(e.to_xml(&req));
@@ -198,7 +197,6 @@ pub async fn list_objects(
     let access_key = match verify_aws_signature(&req, &config).await {
         Ok(key) => key,
         Err(e) => {
-            error!("Authentication failed: {}", e.to_string());
             return HttpResponse::Forbidden()
                 .content_type("application/xml")
                 .body(e.to_xml(&req));
@@ -368,8 +366,14 @@ pub async fn get_object(
 ) -> Result<HttpResponse, Error> {
     let config = config.read().unwrap();
     let (bucket, key) = path.into_inner();
-    let access_key = verify_aws_signature(&req, &config).await
-        .map_err(|e| actix_web::error::ErrorUnauthorized(e.to_string()))?;
+    let access_key = match verify_aws_signature(&req, &config).await {
+        Ok(key) => key,
+        Err(e) => {
+            return Ok(HttpResponse::Forbidden()
+                .content_type("application/xml")
+                .body(e.to_xml(&req)));
+        }
+    };
 
     if !check_permission(&config, &access_key, "GetObject", &format!("{}/{}", bucket, key)) {
         return Err(actix_web::error::ErrorForbidden("Permission denied"));

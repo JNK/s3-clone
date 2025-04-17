@@ -3,6 +3,10 @@ use actix_web::HttpRequest;
 use std::collections::HashMap;
 use log::debug;
 use percent_encoding::percent_decode_str;
+use chrono::{DateTime, Utc, Duration, NaiveDateTime};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use hex::encode as hex_encode;
 
 use crate::config::Config;
 use crate::error::{invalid_access_key_error, signature_does_not_match_error};
@@ -35,46 +39,7 @@ pub async fn verify_aws_signature(
     req: &HttpRequest,
     config: &Config,
 ) -> Result<String, AuthError> {
-    // Check for Authorization header first
-    if let Some(auth_header) = req.headers().get("Authorization") {
-        let auth_header = auth_header
-            .to_str()
-            .map_err(|_| AuthError {
-                message: "Invalid Authorization header".to_string(),
-                code: "InvalidAccessKeyId".to_string(),
-            })?;
-
-        let access_key = parse_access_key_from_auth_header(auth_header)
-            .ok_or_else(|| AuthError {
-                message: "Invalid Authorization header format".to_string(),
-                code: "InvalidAccessKeyId".to_string(),
-            })?;
-
-        debug!("Found access key from Authorization header: {}", access_key);
-
-        // Find the corresponding credential
-        let credential = config.find_credential(&access_key).ok_or_else(|| AuthError {
-            message: "Invalid access key".to_string(),
-            code: "InvalidAccessKeyId".to_string(),
-        })?;
-
-        // Create AWS credentials for verification
-        let _credentials = Credentials::new(
-            credential.access_key_id.clone(),
-            credential.secret_access_key.clone(),
-            None,
-            None,
-            "s3-clone",
-        );
-
-        // Verify the signature
-        // Note: This is a simplified version. In a production environment,
-        // you would want to do a full signature verification
-        
-        return Ok(access_key);
-    }
-
-    // If no Authorization header, check for query parameters
+    // Presigned URL expiry enforcement (must be checked for all requests with these params)
     let query: HashMap<String, String> = req.query_string()
         .split('&')
         .filter_map(|pair| {
@@ -85,8 +50,109 @@ pub async fn verify_aws_signature(
         })
         .collect();
 
-    debug!("Query parameters: {:?}", query);
+    if let (Some(expires), Some(amz_date)) = (query.get("X-Amz-Expires"), query.get("X-Amz-Date")) {
+        let expires = expires.parse::<i64>();
 
+        // Try RFC3339, then AWS format, always convert to Utc
+        let amz_date_parsed = NaiveDateTime::parse_from_str(amz_date, "%Y%m%dT%H%M%SZ")
+            .map(|dt| dt.and_utc());
+        match (expires, amz_date_parsed) {
+            (Ok(expires), Ok(amz_date_utc)) => {
+                let expiry_time = amz_date_utc + Duration::seconds(expires);
+                let now = Utc::now();
+                log::debug!("amz_date_utc: {:?}, expiry_time: {:?}, now: {:?}", amz_date_utc, expiry_time, now);
+                if now > expiry_time {
+                    log::info!("Presigned URL expired: now = {:?}, expiry_time = {:?}", now, expiry_time);
+                    return Err(AuthError {
+                        message: "Request has expired".to_string(),
+                        code: "AccessDenied".to_string(),
+                    });
+                }
+            }
+            (e, d) => {
+                log::debug!("Failed to parse expiry or amz_date: expires={:?}, amz_date={:?}, error={:?} date_error={:?}", query.get("X-Amz-Expires"), amz_date, e, d);
+            }
+        }
+    }
+
+    // Presigned URL signature verification (query-based)
+    if let (Some(signature), Some(credential), Some(amz_date)) = (
+        query.get("X-Amz-Signature"),
+        query.get("X-Amz-Credential"),
+        query.get("X-Amz-Date")
+    ) {
+        let decoded_credential = percent_decode_str(credential)
+            .decode_utf8()
+            .map_err(|_| AuthError {
+                message: "Invalid credential encoding".to_string(),
+                code: "InvalidAccessKeyId".to_string(),
+            })?;
+        let parts: Vec<&str> = decoded_credential.split('/').collect();
+        if parts.is_empty() {
+            return Err(AuthError {
+                message: "Invalid credential format".to_string(),
+                code: "InvalidAccessKeyId".to_string(),
+            });
+        }
+        let access_key = parts[0].to_string();
+        let credential = config.find_credential(&access_key).ok_or_else(|| {
+            log::debug!("No credential found for access key: {}", access_key);
+            AuthError {
+                message: "Invalid access key".to_string(),
+                code: "InvalidAccessKeyId".to_string(),
+            }
+        })?;
+        // Build the string to sign (simplified: just canonical query string for demo)
+        // In real S3, this is much more complex!
+        let mut canonical_query: Vec<(&String, &String)> = query.iter().collect();
+        canonical_query.sort_by(|a, b| a.0.cmp(&b.0));
+        let canonical_query_str = canonical_query.iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>().join("&");
+        let string_to_sign = canonical_query_str;
+        log::debug!("String to sign: {}", string_to_sign);
+        // Derive signing key (simplified: just use secret key)
+        let mut mac = Hmac::<Sha256>::new_from_slice(credential.secret_access_key.as_bytes())
+            .expect("HMAC can take key of any size");
+        mac.update(string_to_sign.as_bytes());
+        let computed_signature = hex_encode(mac.finalize().into_bytes());
+        log::debug!("Provided signature: {}", signature);
+        log::debug!("Computed signature: {}", computed_signature);
+        if &computed_signature != signature {
+            log::debug!("Signature mismatch: denying access");
+            return Err(AuthError {
+                message: "Signature does not match".to_string(),
+                code: "SignatureDoesNotMatch".to_string(),
+            });
+        }
+        log::debug!("Signature valid for access key: {}", access_key);
+        return Ok(access_key);
+    }
+
+    // Check for Authorization header first (TODO: implement header-based signature verification)
+    if let Some(auth_header) = req.headers().get("Authorization") {
+        let auth_header = auth_header
+            .to_str()
+            .map_err(|_| AuthError {
+                message: "Invalid Authorization header".to_string(),
+                code: "InvalidAccessKeyId".to_string(),
+            })?;
+        let access_key = parse_access_key_from_auth_header(auth_header)
+            .ok_or_else(|| AuthError {
+                message: "Invalid Authorization header format".to_string(),
+                code: "InvalidAccessKeyId".to_string(),
+            })?;
+        log::debug!("Found access key from Authorization header: {}", access_key);
+        let credential = config.find_credential(&access_key).ok_or_else(|| AuthError {
+            message: "Invalid access key".to_string(),
+            code: "InvalidAccessKeyId".to_string(),
+        })?;
+        // TODO: Implement AWS SigV4 header-based signature verification
+        log::debug!("TODO: Signature verification for Authorization header not implemented");
+        return Ok(access_key);
+    }
+
+    debug!("Query parameters: {:?}", query);
     if let Some(credential) = query.get("X-Amz-Credential") {
         let decoded_credential = percent_decode_str(credential)
             .decode_utf8()
@@ -94,20 +160,16 @@ pub async fn verify_aws_signature(
                 message: "Invalid credential encoding".to_string(),
                 code: "InvalidAccessKeyId".to_string(),
             })?;
-
         let parts: Vec<&str> = decoded_credential.split('/').collect();
         debug!("Credential parts: {:?}", parts);
-        
         if parts.is_empty() {
             return Err(AuthError {
                 message: "Invalid credential format".to_string(),
                 code: "InvalidAccessKeyId".to_string(),
             });
         }
-
         let access_key = parts[0].to_string();
         debug!("Extracted access key from query: {}", access_key);
-
         let credential = config.find_credential(&access_key).ok_or_else(|| {
             debug!("No credential found for access key: {}", access_key);
             AuthError {
@@ -115,7 +177,6 @@ pub async fn verify_aws_signature(
                 code: "InvalidAccessKeyId".to_string(),
             }
         })?;
-
         // Create AWS credentials for verification
         let _credentials = Credentials::new(
             credential.access_key_id.clone(),
@@ -124,14 +185,10 @@ pub async fn verify_aws_signature(
             None,
             "s3-clone",
         );
-
-        // Verify the signature
         // Note: This is a simplified version. In a production environment,
         // you would want to do a full signature verification
-        
         return Ok(access_key);
     }
-
     Err(AuthError {
         message: "Missing authorization".to_string(),
         code: "InvalidAccessKeyId".to_string(),

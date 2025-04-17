@@ -2640,6 +2640,7 @@ dependencies = [
  "futures",
  "glob",
  "hex",
+ "hmac",
  "log",
  "mime_guess",
  "notify",
