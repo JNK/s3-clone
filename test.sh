@@ -11,7 +11,7 @@ REGION="us-east-1"
 echo "Hello, S3 Clone!" > $KEY
 
 echo "Creating bucket: $BUCKET"
-aws --endpoint-url $ENDPOINT --region $REGION s3api create-bucket --bucket $BUCKET --debug
+aws --endpoint-url $ENDPOINT --region $REGION s3api create-bucket --bucket $BUCKET
 
 echo "Listing buckets"
 aws --endpoint-url $ENDPOINT --region $REGION s3api list-buckets

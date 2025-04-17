@@ -117,8 +117,8 @@ struct ListObjectsResponse {
 
 pub async fn list_buckets(
     req: HttpRequest,
-    config: web::Data<Config>,
-    storage: web::Data<Storage>,
+    config: web::Data<Arc<Config>>,
+    storage: web::Data<Arc<Storage>>,
 ) -> HttpResponse {
     // Verify AWS signature
     let access_key = match verify_aws_signature(&req, &config).await {
@@ -185,8 +185,8 @@ pub async fn list_buckets(
 pub async fn list_objects(
     req: HttpRequest,
     path: web::Path<String>,
-    config: web::Data<Config>,
-    storage: web::Data<Storage>,
+    config: web::Data<Arc<Config>>,
+    storage: web::Data<Arc<Storage>>,
 ) -> HttpResponse {
     let bucket_name = path.into_inner();
     debug!("Listing objects in bucket: {}", bucket_name);
