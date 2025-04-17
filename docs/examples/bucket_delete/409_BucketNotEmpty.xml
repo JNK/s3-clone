@@ -1,0 +1,7 @@
+<Error>
+  <Code>BucketNotEmpty</Code>
+  <Message>The bucket you tried to delete is not empty.</Message>
+  <BucketName>example-bucket</BucketName>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>HostIdExample</HostId>
+</Error>
