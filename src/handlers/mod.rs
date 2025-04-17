@@ -3,31 +3,46 @@ use bytes::Bytes;
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
+use quick_xml::se::to_string;
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
 use crate::storage::{StorageManager, ObjectMetadata};
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename = "ListAllMyBucketsResult")]
 struct ListBucketsResponse {
-    buckets: Vec<BucketResponse>,
+    #[serde(rename = "Owner")]
     owner: OwnerResponse,
+    #[serde(rename = "Buckets")]
+    buckets: BucketsResponse,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+struct BucketsResponse {
+    #[serde(rename = "Bucket")]
+    buckets: Vec<BucketResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct BucketResponse {
+    #[serde(rename = "Name")]
     name: String,
+    #[serde(rename = "CreationDate")]
     creation_date: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct OwnerResponse {
+    #[serde(rename = "ID")]
     id: String,
+    #[serde(rename = "DisplayName")]
     display_name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename = "ListBucketResult")]
 struct ListObjectsResponse {
     #[serde(rename = "Name")]
     name: String,
@@ -45,7 +60,13 @@ struct ListObjectsResponse {
     common_prefixes: Vec<CommonPrefix>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+struct CommonPrefix {
+    #[serde(rename = "Prefix")]
+    prefix: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct ObjectResponse {
     #[serde(rename = "Key")]
     key: String,
@@ -59,12 +80,6 @@ struct ObjectResponse {
     storage_class: String,
     #[serde(rename = "Owner")]
     owner: OwnerResponse,
-}
-
-#[derive(Serialize)]
-struct CommonPrefix {
-    #[serde(rename = "Prefix")]
-    prefix: String,
 }
 
 pub async fn list_buckets(
@@ -97,11 +112,16 @@ pub async fn list_buckets(
         .collect();
 
     let response = ListBucketsResponse {
-        buckets,
         owner,
+        buckets: BucketsResponse { buckets },
     };
 
-    Ok(HttpResponse::Ok().json(response))
+    let xml = to_string(&response)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/xml")
+        .body(xml))
 }
 
 pub async fn list_objects(
@@ -149,7 +169,12 @@ pub async fn list_objects(
         common_prefixes: Vec::new(),
     };
 
-    Ok(HttpResponse::Ok().json(response))
+    let xml = to_string(&response)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/xml")
+        .body(xml))
 }
 
 pub async fn list_objects_v2(
@@ -205,8 +230,8 @@ pub async fn list_objects_v2(
                 e_tag: format!("\"{:x}\"", obj.size),
                 storage_class: "STANDARD".to_string(),
                 owner: OwnerResponse {
-                    id: "".to_string(),
-                    display_name: "".to_string(),
+                    id: access_key.clone(),
+                    display_name: access_key.clone(),
                 },
             });
         }
@@ -222,7 +247,12 @@ pub async fn list_objects_v2(
         common_prefixes,
     };
 
-    Ok(HttpResponse::Ok().json(response))
+    let xml = to_string(&response)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/xml")
+        .body(xml))
 }
 
 pub async fn get_object(
