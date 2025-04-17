@@ -3,7 +3,7 @@ use actix_web::http::header::{HeaderValue, EntityTag};
 use bytes::Bytes;
 use log::{error, debug};
 use std::str::FromStr;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
@@ -48,28 +48,27 @@ pub async fn get_object(
 
     // Get object
     match storage.get_object(&bucket_name, &key) {
-        Ok((data, metadata)) => {
+        Ok(data) => {
             let mut response = HttpResponse::Ok();
             
-            // Set Content-Type
-            if let Some(content_type) = metadata.content_type {
-                response.content_type(content_type);
-            }
+            // Get metadata separately
+            if let Ok(metadata) = storage.head_object(&bucket_name, &key) {
+                // Set Content-Type
+                if let Some(content_type) = metadata.content_type {
+                    response.content_type(content_type);
+                }
 
-            // Set ETag
-            if let Some(etag) = metadata.etag {
-                response.insert_header(("ETag", EntityTag::new_strong(etag)));
-            }
+                // Set ETag
+                response.insert_header(("ETag", EntityTag::new_strong(metadata.etag)));
 
-            // Set Last-Modified
-            if let Some(last_modified) = metadata.last_modified {
-                if let Ok(dt) = DateTime::from_str(&last_modified) {
+                // Set Last-Modified
+                if let Ok(dt) = DateTime::<Utc>::from_str(&metadata.last_modified) {
                     response.insert_header(("Last-Modified", dt.to_rfc2822()));
                 }
-            }
 
-            // Set Content-Length
-            response.insert_header(("Content-Length", metadata.size.to_string()));
+                // Set Content-Length
+                response.insert_header(("Content-Length", metadata.size.to_string()));
+            }
 
             response.body(data)
         }
@@ -129,15 +128,11 @@ pub async fn head_object(
             }
 
             // Set ETag
-            if let Some(etag) = metadata.etag {
-                response.insert_header(("ETag", EntityTag::new_strong(etag)));
-            }
+            response.insert_header(("ETag", EntityTag::new_strong(metadata.etag)));
 
             // Set Last-Modified
-            if let Some(last_modified) = metadata.last_modified {
-                if let Ok(dt) = DateTime::from_str(&last_modified) {
-                    response.insert_header(("Last-Modified", dt.to_rfc2822()));
-                }
+            if let Ok(dt) = DateTime::<Utc>::from_str(&metadata.last_modified) {
+                response.insert_header(("Last-Modified", dt.to_rfc2822()));
             }
 
             // Set Content-Length
@@ -199,12 +194,12 @@ pub async fn put_object(
         .to_string();
 
     // Put object
-    match storage.put_object(&bucket_name, &key, body.to_vec(), content_type) {
-        Ok(metadata) => {
+    match storage.put_object(&bucket_name, &key, body.to_vec()) {
+        Ok(etag) => {
             let mut response = HttpResponse::Ok();
             
             // Set ETag
-            if let Some(etag) = metadata.etag {
+            if let Some(etag) = etag {
                 response.insert_header(("ETag", EntityTag::new_strong(etag)));
             }
 

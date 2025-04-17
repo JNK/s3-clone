@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
-use crate::error::{AuthError, access_denied_error, no_such_bucket_error, internal_error};
+use crate::error::{access_denied_error, no_such_bucket_error, internal_error};
 use crate::storage::Storage;
 
 #[derive(Serialize)]

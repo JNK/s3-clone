@@ -221,15 +221,16 @@ pub async fn list_objects_v2(
     }
 
     let prefix = query.get("prefix").map(String::as_str);
+    let marker = query.get("marker").map(String::as_str);
     let delimiter = query.get("delimiter").map(String::as_str).unwrap_or("/");
     let max_keys = query.get("max-keys")
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(1000);
 
-    let objects = storage.list_objects(&bucket, prefix)
+    let objects = storage.list_objects(&bucket, prefix, marker, max_keys)
         .map_err(|e| {
             log::error!("Failed to list objects: {}", e);
-            actix_web::error::ErrorInternalServerError(e.message)
+            actix_web::error::ErrorInternalServerError(e.to_string())
         })?;
 
     let mut contents = Vec::new();
