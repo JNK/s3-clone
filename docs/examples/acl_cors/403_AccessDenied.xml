@@ -1,0 +1,6 @@
+<Error>
+  <Code>AccessDenied</Code>
+  <Message>Access Denied</Message>
+  <RequestId>EXAMPLE123456789</RequestId>
+  <HostId>EXAMPLEHostID/abc123def456ghi789</HostId>
+</Error>
