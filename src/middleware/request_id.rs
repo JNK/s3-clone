@@ -51,7 +51,7 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&self, mut req: ServiceRequest) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         // Generate a new request ID
         let request_id = Uuid::new_v4().to_string();
         

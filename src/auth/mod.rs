@@ -3,11 +3,9 @@ use actix_web::HttpRequest;
 use std::collections::HashMap;
 use log::debug;
 use percent_encoding::percent_decode_str;
-use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::{invalid_access_key_error, signature_does_not_match_error};
-use crate::middleware::request_id;
 
 #[derive(Debug)]
 pub struct AuthError {

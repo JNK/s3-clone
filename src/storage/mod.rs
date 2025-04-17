@@ -109,7 +109,7 @@ impl Storage {
         bucket_name: &str,
         key: &str,
         data: Vec<u8>,
-        content_type: Option<String>,
+        // content_type: Option<String>,
     ) -> Result<Option<String>, StorageError> {
         let bucket_path = self.base_path.join(bucket_name);
         if !bucket_path.exists() {
