@@ -9,7 +9,7 @@ use std::sync::RwLock;
 
 use crate::auth::{verify_aws_signature, check_permission};
 use crate::config::Config;
-use crate::error::{access_denied_error, no_such_bucket_error, internal_error};
+use crate::error::{access_denied_error, no_such_bucket_error, internal_error, no_such_key_error};
 use crate::storage::Storage;
 
 pub mod bucket;
@@ -375,8 +375,14 @@ pub async fn get_object(
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
-    let data = storage.get_object(&bucket, &key)
-        .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
+    let data = match storage.get_object(&bucket, &key) {
+        Ok(data) => data,
+        Err(_) => {
+            return Ok(HttpResponse::NotFound()
+                .content_type("application/xml")
+                .body(crate::error::no_such_key_error(&req, &key)));
+        }
+    };
 
     Ok(HttpResponse::Ok()
         .body(data))
