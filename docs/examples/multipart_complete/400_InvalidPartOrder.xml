@@ -1,0 +1,6 @@
+<Error>
+  <Code>InvalidPartOrder</Code>
+  <Message>The list of parts is not in ascending order.</Message>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>HostIdExample</HostId>
+</Error>
