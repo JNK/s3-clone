@@ -23,6 +23,24 @@
 
 ---
 
+## Implementation Notes
+
+**Host and Path Style:**
+- All API requests are served from `localhost` (or the configured bind address).
+- Path-style URLs are used for all operations, e.g.:
+  - `PUT /bucket-name`
+  - `GET /bucket-name/object-key`
+- No virtual-hosted style (e.g., `bucket.localhost`) is used.
+
+**Default Region:**
+- The default region is `de-muc-01` (configurable via the config file).
+- If a region is not specified in a request, this default is used.
+
+**Optional Headers:**
+- Optional headers such as ACLs, object lock, and ownership are **deprioritized** and will be ignored unless they relate to a feature being actively built.
+
+---
+
 ## Implementation Steps (Detailed)
 
 ### 1. Project Initialization
@@ -237,6 +255,10 @@
 # Storage configuration: where to store buckets and objects
 storage:
   location: "/var/lib/s3-clone"
+
+# Default region for new buckets (if not specified in request)
+region:
+  default: "de-muc-01"
 
 # Logging configuration: set levels per component (server, storage, auth, etc.)
 logging:

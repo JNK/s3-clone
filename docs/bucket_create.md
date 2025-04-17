@@ -18,7 +18,8 @@ Host: localhost:9000
 - `Date`: RFC 1123 date
 - `Host`: `localhost:9000`
 
-### Optional Headers
+### Optional Headers (Deprioritized)
+These headers are deprioritized and will be ignored unless related to a feature being built:
 - `x-amz-acl`: `private | public-read | public-read-write | authenticated-read`
 - `x-amz-bucket-object-lock-enabled`: `true | false`
 - `x-amz-object-ownership`: `BucketOwnerPreferred | ObjectWriter | BucketOwnerEnforced`
@@ -28,10 +29,10 @@ Host: localhost:9000
 If specifying a region:
 ```xml
 <CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <LocationConstraint>eu-west-1</LocationConstraint>
+  <LocationConstraint>de-muc-01</LocationConstraint>
 </CreateBucketConfiguration>
 ```
-If omitted, defaults to `us-east-1`.
+If omitted, defaults to `de-muc-01` (this default is configurable via the server config).
 
 ---
 
@@ -64,9 +65,9 @@ Content-Length: 0
   - Lowercase letters, numbers, and hyphens
   - Cannot be formatted as IP address
   - Cannot start or end with a hyphen
-- If `LocationConstraint` is provided, must be a valid AWS region
+- If `LocationConstraint` is provided, must be a valid region (default: `de-muc-01`, configurable)
 - Only authenticated requests allowed
-- If ACLs or object lock are specified, must have appropriate permissions
+- If ACLs or object lock are specified, must have appropriate permissions (ignored unless feature is built)
 
 ---
 
