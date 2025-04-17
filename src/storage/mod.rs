@@ -8,6 +8,7 @@ use async_stream::try_stream;
 use futures::Stream;
 use tokio::fs::File as TokioFile;
 use tokio::io::AsyncReadExt;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct StorageError {
@@ -112,8 +113,8 @@ impl StorageManager {
         Ok(objects)
     }
 
-    pub async fn get_object(&self, bucket: &str, key: &str) -> Result<impl Stream<Item = Result<Vec<u8>, StorageError>>, StorageError> {
-        let path = self.root_path.join(bucket).join(key);
+    pub async fn get_object(&self, bucket: String, key: String) -> Result<impl Stream<Item = Result<Vec<u8>, StorageError>> + 'static, StorageError> {
+        let path = self.root_path.join(&bucket).join(&key);
         if !path.exists() {
             return Err(StorageError {
                 message: format!("Object {}/{} does not exist", bucket, key),

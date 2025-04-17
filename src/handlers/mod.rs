@@ -174,7 +174,7 @@ pub async fn get_object(
         return Err(actix_web::error::ErrorForbidden("Permission denied"));
     }
 
-    let stream = storage.get_object(&bucket, &key).await
+    let stream = storage.get_object(bucket, key).await
         .map_err(|e| actix_web::error::ErrorNotFound(e.message))?;
 
     Ok(HttpResponse::Ok()
