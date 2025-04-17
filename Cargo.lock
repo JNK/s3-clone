@@ -2638,6 +2638,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "futures",
+ "glob",
  "hex",
  "log",
  "mime_guess",

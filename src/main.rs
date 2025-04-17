@@ -35,18 +35,23 @@ async fn main() -> std::io::Result<()> {
             let (tx, rx) = channel();
             let mut watcher = notify::recommended_watcher(tx).expect("Failed to create watcher");
             watcher.watch(Path::new(&config_path), RecursiveMode::NonRecursive).expect("Failed to watch config file");
+            let mut last_reload = std::time::Instant::now() - std::time::Duration::from_secs(1);
             loop {
                 match rx.recv() {
                     Ok(event) => {
                         if let notify::EventKind::Modify(_) = event.unwrap().kind {
-                            match Config::load(&config_path) {
-                                Ok(new_config) => {
-                                    let mut cfg = config.write().unwrap();
-                                    *cfg = new_config;
-                                    log::info!("Reloaded config from {}", config_path);
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to reload config: {}", e);
+                            let now = std::time::Instant::now();
+                            if now.duration_since(last_reload) > std::time::Duration::from_millis(500) {
+                                last_reload = now;
+                                match Config::load(&config_path) {
+                                    Ok(new_config) => {
+                                        let mut cfg = config.write().unwrap();
+                                        *cfg = new_config;
+                                        log::info!("Reloaded config from {}", config_path);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to reload config: {}", e);
+                                    }
                                 }
                             }
                         }

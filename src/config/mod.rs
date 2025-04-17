@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use glob::Pattern;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -42,8 +43,9 @@ impl Config {
     pub fn check_permission(&self, access_key: &str, action: &str, resource: &str) -> bool {
         if let Some(credential) = self.find_credential(access_key) {
             credential.permissions.iter().any(|p| {
-                (p.action == "*" || p.action == action) && 
-                (p.resource == "*" || p.resource == resource)
+                let action_matches = p.action == "*" || Pattern::new(&p.action).map(|pat| pat.matches(action)).unwrap_or(false);
+                let resource_matches = p.resource == "*" || Pattern::new(&p.resource).map(|pat| pat.matches(resource)).unwrap_or(false);
+                action_matches && resource_matches
             })
         } else {
             false
