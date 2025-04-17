@@ -52,54 +52,70 @@
 ### 2. API Research & Self-Documenting Code
 
 #### 2.1. General
-- [ ] Research AWS S3 API documentation for all relevant endpoints and XML schemas.
-- [ ] For each method, document request/response structure, edge cases, and validation requirements.
+- [x] Research AWS S3 API documentation for all relevant endpoints and XML schemas (in progress, see below for completed endpoints).
+- [x] For each method, document request/response structure, edge cases, and validation requirements (in progress).
 
 #### 2.2. Bucket Operations
-- [ ] Research and document:
-    - [ ] Create Bucket (`PUT /{bucket}`)
-    - [ ] List Buckets (`GET /`)
-    - [ ] Delete Bucket (`DELETE /{bucket}`)
-    - [ ] List Objects in Bucket (`GET /{bucket}`)
-    - [ ] List Objects V2 (`GET /{bucket}?list-type=2`)
+- [x] Research and document:
+    - [x] Create Bucket (`PUT /{bucket}`)
+    - [x] List Buckets (`GET /`)
+    - [x] Delete Bucket (`DELETE /{bucket}`)
+    - [x] List Objects in Bucket (`GET /{bucket}`)
+    - [x] List Objects V2 (`GET /{bucket}?list-type=2`)
 
 #### 2.3. Object Operations
-- [ ] Research and document:
-    - [ ] Put Object (`PUT /{bucket}/{object}`)
-    - [ ] Get Object (`GET /{bucket}/{object}`)
-    - [ ] Get Object (Byte Range) (`GET /{bucket}/{object}` with `Range` header)
-    - [ ] Delete Object (`DELETE /{bucket}/{object}`)
+- [x] Research and document:
+    - [x] Put Object (`PUT /{bucket}/{object}`)
+    - [x] Get Object (`GET /{bucket}/{object}`)
+    - [x] Get Object (Byte Range) (`GET /{bucket}/{object}` with `Range` header)
+    - [x] Delete Object (`DELETE /{bucket}/{object}`)
 
 #### 2.4. Multipart Uploads
-- [ ] Research and document:
-    - [ ] Initiate Multipart Upload (`POST /{bucket}/{object}?uploads`)
-    - [ ] Upload Part (`PUT /{bucket}/{object}?partNumber={PartNumber}&uploadId={UploadId}`)
-    - [ ] Complete Multipart Upload (`POST /{bucket}/{object}?uploadId={UploadId}`)
-    - [ ] Abort Multipart Upload (`DELETE /{bucket}/{object}?uploadId={UploadId}`)
-    - [ ] List Multipart Uploads (`GET /{bucket}?uploads`)
-    - [ ] List Parts (`GET /{bucket}/{object}?uploadId={UploadId}`)
+- [x] Research and document:
+    - [x] Initiate Multipart Upload (`POST /{bucket}/{object}?uploads`)
+    - [x] Upload Part (`PUT /{bucket}/{object}?partNumber={PartNumber}&uploadId={UploadId}`)
+    - [x] Complete Multipart Upload (`POST /{bucket}/{object}?uploadId={UploadId}`)
+    - [x] Abort Multipart Upload (`DELETE /{bucket}/{object}?uploadId={UploadId}`)
+    - [x] List Multipart Uploads (`GET /{bucket}?uploads`)
+    - [x] List Parts (`GET /{bucket}/{object}?uploadId={UploadId}`)
 
 #### 2.5. Presigned URLs
-- [ ] Research and document:
-    - [ ] Presigned GET Object
-    - [ ] Presigned PUT Object
+- [x] Research and document:
+    - [x] Presigned GET Object
+    - [x] Presigned PUT Object
 
 #### 2.6. ACLs & CORS
-- [ ] Research and document:
-    - [ ] Bucket ACLs (public, IP-based)
-    - [ ] CORS preflight (`OPTIONS /{bucket}/{object}`)
+- [x] Research and document:
+    - [x] Bucket ACLs (public, IP-based)
+    - [x] CORS preflight (`OPTIONS /{bucket}/{object}`)
 
 #### 2.7. Healthcheck & Misc
-- [ ] Research and document:
-    - [ ] Healthcheck (`GET /healthz`)
+- [x] Research and document:
+    - [x] Healthcheck (`GET /healthz`)
     - [ ] API Docs (`GET /_docs`)
 
 #### 2.8. Error Responses
-- [ ] Research and document:
-    - [ ] Standard S3 error XML responses for all endpoints
+- [x] Research and document:
+    - [x] Standard S3 error XML responses for all endpoints (in progress, see docs/examples/)
 
 #### 2.9. OpenAPI Annotations
 - [ ] Annotate all controllers and models with OpenAPI doc comments for self-documentation.
+
+---
+
+### Research Progress Summary
+
+**Completed:**
+- Presigned GET/PUT Object (docs/examples, request/response, error XML)
+- ACLs & CORS (docs/examples, config, error XML)
+- Healthcheck endpoint (docs)
+- Standard S3 error XML responses (for completed endpoints)
+
+**Still to be researched/documented:**
+- API Docs endpoint (`/_docs`)
+- OpenAPI annotations for all controllers/models
+
+See `/docs/` for detailed documentation and `/docs/examples/` for error XML examples.
 
 ---
 
@@ -315,6 +331,64 @@ config_reload:
 
 ---
 
+## Bucket and Multipart Metadata Storage
+
+### Bucket Metadata
+- Each bucket contains a metadata file at `_metadata/bucket.yaml` (relative to the bucket root).
+- This file is written at bucket creation and is read-only from a process perspective.
+- It stores:
+  - `name`: Bucket name
+  - `region`: Region (from config or request)
+  - `created`: Creation timestamp (ISO8601)
+  - `created_by`: Creator (user/credential)
+  - `acls`: Bucket ACLs (public, allowed_ips, etc.)
+  - `cors`: CORS rules (allowed origins, methods, etc.)
+- If ACLs or CORS are not specified, defaults from config are used.
+- **Object metadata is not stored here.**
+
+#### Example: `_metadata/bucket.yaml`
+```yaml
+name: example-bucket
+region: de-muc-01
+created: "2024-06-12T10:00:00Z"
+created_by: jan-niklas.kohlhaas
+acls:
+  public: false
+  allowed_ips: []
+cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "PUT"]
+```
+
+### Multipart Upload Metadata
+- Each multipart upload has its own metadata file at `_metadata/multipart/<multipart-id>.yaml` (relative to the bucket root).
+- This file is created when a multipart upload is initiated and updated as parts are uploaded.
+- It stores:
+  - `key`: Object key being uploaded
+  - `upload_id`: Multipart upload ID
+  - `initiated`: Initiation timestamp (ISO8601)
+  - `initiated_by`: Creator (user/credential)
+  - `parts`: List of uploaded parts (number, etag, size, last_modified)
+
+#### Example: `_metadata/multipart/abc123.yaml`
+```yaml
+key: videos/bigfile.mp4
+upload_id: abc123
+initiated: "2024-06-12T10:05:00Z"
+initiated_by: jan-niklas.kohlhaas
+parts:
+  - part_number: 1
+    etag: "part1etag"
+    size: 5242880
+    last_modified: "2024-06-12T10:06:00Z"
+  - part_number: 2
+    etag: "part2etag"
+    size: 5242880
+    last_modified: "2024-06-12T10:07:00Z"
+```
+
+--- 
+
 ## Workflow
 
 1. **Edit Rust code and OpenAPI annotations** for any API/model changes.
@@ -327,4 +401,4 @@ config_reload:
 ## Changelogs
 
 - **2024-06-10**: Initial README created with detailed implementation steps, config example, and changelogs section.
-- **2024-06-11**: Project initialized with cargo, dependencies added, and directory structure created (`src/api`, `src/auth`, `src/config`, `src/docs`, `src/logging`, `src/storage`). 
+- **2024-06-11**: Project initialized with cargo, dependencies added, and directory structure created (`src/api`, `src/auth`, `src/config`, `src/docs`, `src/logging`, `src/storage`).
