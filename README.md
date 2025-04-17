@@ -26,8 +26,8 @@
 ## Implementation Steps (Detailed)
 
 ### 1. Project Initialization
-- [ ] Set up Rust project and dependencies.
-- [ ] Create initial directory structure.
+- [x] Set up Rust project and dependencies.
+- [x] Create initial directory structure.
 
 ---
 
@@ -304,4 +304,5 @@ config_reload:
 
 ## Changelogs
 
-- **2025-04-18**: Initial README created with detailed implementation steps, config example, and changelogs section. 
+- **2024-06-10**: Initial README created with detailed implementation steps, config example, and changelogs section.
+- **2024-06-11**: Project initialized with cargo, dependencies added, and directory structure created (`src/api`, `src/auth`, `src/config`, `src/docs`, `src/logging`, `src/storage`). 
