@@ -10,12 +10,12 @@ region:
 server:
   http:
     enabled: true
-    port: 9000
+    port: 8088
+    host: 0.0.0.0
   https:
     enabled: true
     port: 9443
     letsencrypt:
-      enabled: true
       email: "admin@example.com"
       domains: ["s3.local"]
       do_token: "DO_API_TOKEN"

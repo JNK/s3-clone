@@ -147,7 +147,8 @@ This project uses [`env_logger`](https://docs.rs/env_logger) and the standard [`
 ---
 
 ### 5. TLS & Server Setup
-- [ ] Implement HTTP and optional HTTPS server.
+- [ ] Implement HTTP server.
+- [ ] Implement HTTPS server.
 - [ ] Integrate Let's Encrypt (DigitalOcean DNS only).
 - [ ] Add healthcheck endpoint.
 
@@ -299,7 +300,6 @@ server:
     enabled: true
     port: 9443
     letsencrypt:
-      enabled: true
       email: "admin@example.com"
       domains: ["s3.local"]
       do_token: "DO_API_TOKEN"

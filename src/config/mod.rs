@@ -36,6 +36,7 @@ pub struct ServerConfig {
 pub struct HttpConfig {
     pub enabled: bool,
     pub port: u16,
+    pub host: String,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -47,7 +48,6 @@ pub struct HttpsConfig {
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LetsEncryptConfig {
-    pub enabled: bool,
     pub email: String,
     pub domains: Vec<String>,
     pub do_token: String,
