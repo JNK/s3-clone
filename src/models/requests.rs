@@ -196,4 +196,4 @@ pub enum Request {
     UploadPart(UploadPartRequest),
     CompleteMultipartUpload(CompleteMultipartUploadRequest),
     AbortMultipartUpload(AbortMultipartUploadRequest),
-} 
+}
