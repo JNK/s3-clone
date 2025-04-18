@@ -13,6 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel};
 use std::time::Duration;
 use std::cmp::PartialEq;
+use tracing::{info, warn, error, debug};
+use tracing_subscriber::{fmt, EnvFilter, reload, layer::SubscriberExt, Registry};
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Config {
@@ -37,17 +40,14 @@ pub struct RegionConfig {
     pub default: String,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
-pub struct LoggingConfig {
-    pub format: String,
-    pub levels: LoggingLevels,
+pub struct LoggingReloadHandle {
+    pub handle: reload::Handle<EnvFilter, Registry>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
-pub struct LoggingLevels {
-    pub server: String,
-    pub storage: String,
-    pub auth: String,
+pub struct LoggingConfig {
+    pub format: String,
+    pub levels: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -118,6 +118,7 @@ pub struct ConfigLoader {
     pub config_path: PathBuf,
     pub config: Arc<Mutex<Config>>,
     reload_active: Arc<AtomicBool>,
+    logging_reload: Arc<Mutex<Option<LoggingReloadHandle>>>,
 }
 
 impl ConfigLoader {
@@ -130,6 +131,7 @@ impl ConfigLoader {
             config_path,
             config,
             reload_active: Arc::new(AtomicBool::new(false)),
+            logging_reload: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -138,7 +140,6 @@ impl ConfigLoader {
         let new_config = Config::load_from_file(&self.config_path)?;
         let mut cfg = self.config.lock().unwrap();
         if *cfg == new_config {
-            // No semantic change
             Ok(false)
         } else {
             *cfg = new_config;
@@ -230,6 +231,22 @@ impl ConfigLoader {
             }
         });
     }
+
+    pub fn update_log_filter(&self, reload_handle: &LoggingReloadHandle) {
+        let cfg = self.config.lock().unwrap();
+        let levels = &cfg.logging.levels;
+        let default = levels.get("default").cloned().unwrap_or_else(|| "info".to_string());
+        let filter_string = std::iter::once(default.clone())
+            .chain(
+                levels.iter()
+                    .filter(|(k,_)| *k != "default")
+                    .map(|(k, v)| format!("{k}={v}"))
+            )
+            .collect::<Vec<_>>()
+            .join(",");
+        let env_filter = EnvFilter::try_new(filter_string).unwrap();
+        reload_handle.handle.reload(env_filter).unwrap();
+    }
 }
 
 impl Clone for ConfigLoader {
@@ -238,6 +255,7 @@ impl Clone for ConfigLoader {
             config_path: self.config_path.clone(),
             config: Arc::clone(&self.config),
             reload_active: Arc::clone(&self.reload_active),
+            logging_reload: Arc::clone(&self.logging_reload),
         }
     }
 }
