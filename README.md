@@ -121,7 +121,7 @@ See `/docs/` for detailed documentation and `/docs/examples/` for error XML exam
 
 ### 3. Config Management
 - [x] Define YAML config schema.
-- [ ] Implement config loader with hot-reloading.
+- [x] Implement config loader with hot-reloading.
 - [x] **Validate config on load and reload** (required fields, types, value ranges, etc.)
 
 ---

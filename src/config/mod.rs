@@ -3,16 +3,19 @@
 // notify-rs = "4.0.16"
 // signal-hook = "0.3.17"
 
-use serde::{Deserialize};
+use notify::{Watcher, RecursiveMode, RecommendedWatcher, Config as NotifyConfig, Event, EventKind};
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use notify::{Watcher, RecursiveMode, RecommendedWatcher, Config as NotifyConfig};
-use signal_hook::consts::signal::SIGHUP;
-use signal_hook::iterator::Signals;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel};
+use std::time::{Instant, Duration};
+use sha2::{Digest, Sha256};
+use std::cmp::PartialEq;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Config {
     pub storage: StorageConfig,
     pub region: RegionConfig,
@@ -25,50 +28,49 @@ pub struct Config {
     pub config_reload: ConfigReload,
 }
 
-
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct StorageConfig {
     pub location: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct RegionConfig {
     pub default: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LoggingConfig {
     pub format: String,
     pub levels: LoggingLevels,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LoggingLevels {
     pub server: String,
     pub storage: String,
     pub auth: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct ServerConfig {
     pub http: HttpConfig,
     pub https: Option<HttpsConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct HttpConfig {
     pub enabled: bool,
     pub port: u16,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct HttpsConfig {
     pub enabled: bool,
     pub port: u16,
     pub letsencrypt: Option<LetsEncryptConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LetsEncryptConfig {
     pub enabled: bool,
     pub email: String,
@@ -76,37 +78,37 @@ pub struct LetsEncryptConfig {
     pub do_token: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Credential {
     pub access_key: String,
     pub secret_key: String,
     pub permissions: Vec<Permission>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Permission {
     pub action: String,
     pub resource: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct DefaultAcls {
     pub public: bool,
     pub allowed_ips: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct DefaultCors {
     pub allowed_origins: Vec<String>,
     pub allowed_methods: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct MultipartConfig {
     pub expiry_seconds: u64,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct ConfigReload {
     pub sighup: bool,
     pub api: bool,
@@ -116,6 +118,7 @@ pub struct ConfigReload {
 pub struct ConfigLoader {
     pub config_path: PathBuf,
     pub config: Arc<Mutex<Config>>,
+    reload_active: Arc<AtomicBool>,
 }
 
 impl ConfigLoader {
@@ -124,67 +127,109 @@ impl ConfigLoader {
         let config_path = path.as_ref().to_path_buf();
         let config = Config::load_from_file(&config_path)?;
         let config = Arc::new(Mutex::new(config));
-        Ok(Self { config_path, config })
+        Ok(Self {
+            config_path,
+            config,
+            reload_active: Arc::new(AtomicBool::new(false)),
+        })
     }
 
     /// Reload the config from the file
-    pub fn reload(&self) -> Result<(), String> {
+    pub fn reload(&self) -> Result<bool, String> {
         let new_config = Config::load_from_file(&self.config_path)?;
         let mut cfg = self.config.lock().unwrap();
-        *cfg = new_config;
-        Ok(())
+        if *cfg == new_config {
+            // No semantic change
+            Ok(false)
+        } else {
+            *cfg = new_config;
+            Ok(true)
+        }
     }
 
     /// Start listening for reload triggers (fsevents and SIGHUP) and call reload() on trigger.
     pub fn start_listening_for_reloads(&self) {
-        let config_reload;
-        {
+        self.reload_active.store(false, Ordering::SeqCst);
+        let (tx, rx) = channel();
+        self.reload_active.store(true, Ordering::SeqCst);
+        let config_path = self.config_path.clone();
+        let reload_active = self.reload_active.clone();
+        let config_reload = {
             let cfg = self.config.lock().unwrap();
-            config_reload = cfg.config_reload.clone();
-        }
-        // Filesystem events (notify)
+            cfg.config_reload.clone()
+        };
         if config_reload.fsevents {
-            let config_path = self.config_path.clone();
-            let loader = self.clone();
+            let tx_fs = tx.clone();
+            let reload_active_fs = reload_active.clone();
             thread::spawn(move || {
-                let (tx, rx) = std::sync::mpsc::channel();
-                let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())
-                .expect("Failed to create watcher");
-
-                watcher.watch(config_path.as_ref(), RecursiveMode::NonRecursive)
-                .expect("Failed to start watcher");
-
+                let (notify_tx, notify_rx) = channel();
+                let mut watcher = RecommendedWatcher::new(notify_tx, NotifyConfig::default())
+                    .expect("Failed to create watcher");
+                watcher
+                    .watch(config_path.as_ref(), RecursiveMode::NonRecursive)
+                    .expect("Failed to start watcher");
+                let debounce_window = Duration::from_millis(200);
+                let mut pending = false;
                 loop {
-                    match rx.recv() {
-                        Ok(_) => {
-                            if let Err(e) = loader.reload() {
-                                eprintln!("Config reload failed: {}", e);
-                            } else {
-                                println!("Config reloaded from file event");
-                            }
+                    if !reload_active_fs.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let event = notify_rx.recv();
+                    match event {
+                        Ok(Ok(Event { kind: EventKind::Modify(_), .. })) => {
+                            pending = true;
                         }
-                        Err(e) => {
-                            eprintln!("Config watch error: {}", e);
-                            break;
+                        Ok(_) => {},
+                        Err(_) => break,
+                    }
+                    // Debounce: wait for more events for debounce_window
+                    while pending {
+                        if notify_rx.recv_timeout(debounce_window).is_ok() {
+                            // More events, keep waiting
+                        } else {
+                            // Debounce window expired, trigger reload
+                            let _ = tx_fs.send(());
+                            pending = false;
                         }
                     }
                 }
             });
         }
-        // SIGHUP signal
         if config_reload.sighup {
-            let loader = self.clone();
+            let tx_sighup = tx.clone();
+            let reload_active_sighup = reload_active.clone();
             thread::spawn(move || {
+                use signal_hook::consts::signal::SIGHUP;
+                use signal_hook::iterator::Signals;
                 let mut signals = Signals::new(&[SIGHUP]).expect("Failed to register SIGHUP handler");
                 for _ in signals.forever() {
-                    if let Err(e) = loader.reload() {
-                        eprintln!("Config reload failed: {}", e);
-                    } else {
-                        println!("Config reloaded from SIGHUP");
+                    if !reload_active_sighup.load(Ordering::SeqCst) {
+                        break;
                     }
+                    let _ = tx_sighup.send(());
                 }
             });
         }
+        let loader_main = self.clone();
+        thread::spawn(move || {
+            while loader_main.reload_active.load(Ordering::SeqCst) {
+                if rx.recv().is_ok() {
+                    match loader_main.reload() {
+                        Ok(true) => {
+                            println!("Config reloaded");
+                            loader_main.start_listening_for_reloads();
+                            break;
+                        }
+                        Ok(false) => {
+                            println!("Config unchanged, not reloaded");
+                        }
+                        Err(e) => {
+                            eprintln!("Config reload failed: {}", e);
+                        }
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -193,6 +238,7 @@ impl Clone for ConfigLoader {
         Self {
             config_path: self.config_path.clone(),
             config: Arc::clone(&self.config),
+            reload_active: Arc::clone(&self.reload_active),
         }
     }
 }
@@ -240,6 +286,8 @@ impl Config {
         if self.multipart.expiry_seconds == 0 {
             return Err("multipart.expiry_seconds must be > 0".to_string());
         }
+
         Ok(())
     }
-} 
+}
+

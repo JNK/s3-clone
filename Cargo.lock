@@ -932,6 +932,7 @@ dependencies = [
  "notify",
  "serde",
  "serde_yaml",
+ "sha2",
  "signal-hook",
  "tokio",
  "tracing",

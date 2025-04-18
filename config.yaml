@@ -55,4 +55,4 @@ multipart:
 config_reload:
   sighup: true
   api: true
-  fsevents: true 
+  fsevents: true
