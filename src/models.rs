@@ -35,4 +35,23 @@ pub struct ObjectMetadata {
     pub etag: String,
     pub last_modified: String,
     // Add more fields as needed
+}
+
+#[derive(Debug, Clone)]
+pub struct Permission {
+    pub action: String,
+    pub resource: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Credentials {
+    pub access_key: String,
+    pub secret_key: String,
+    pub permissions: Vec<Permission>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthContext {
+    Anonymous,
+    AwsAccount(Credentials),
 } 
