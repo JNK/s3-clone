@@ -1,7 +1,6 @@
 use log::debug;
 use serde::Deserialize;
 use std::cmp::PartialEq;
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -9,7 +8,6 @@ use std::path::Path;
 pub struct Config {
     pub storage: StorageConfig,
     pub region: RegionConfig,
-    pub logging: LoggingConfig,
     pub server: ServerConfig,
     pub credentials: Vec<Credential>,
     pub default_acls: DefaultAcls,
@@ -26,12 +24,6 @@ pub struct StorageConfig {
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct RegionConfig {
     pub default: String,
-}
-
-#[derive(Debug, Deserialize, Clone, PartialEq)]
-pub struct LoggingConfig {
-    pub format: String,
-    pub levels: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]

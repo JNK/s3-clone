@@ -6,14 +6,6 @@ storage:
 region:
   default: "de-muc-01"
 
-# Logging configuration: set levels per component (server, storage, auth, etc.)
-logging:
-  format: "json"  # or "text"
-  levels:
-    server: "info"
-    storage: "warn"
-    auth: "debug"
-
 # Server configuration
 server:
   http:

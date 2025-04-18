@@ -128,31 +128,21 @@ See `/docs/` for detailed documentation and `/docs/examples/` for error XML exam
 
 ### 4. Logging
 
-This project uses [`tracing`](https://docs.rs/tracing) and [`tracing-subscriber`](https://docs.rs/tracing-subscriber) for structured, per-module logging.
+This project uses [`env_logger`](https://docs.rs/env_logger) and the standard [`log`](https://docs.rs/log) crate for logging.
 
-- **Log levels and output format are configured in `config.yaml`:**
-  ```yaml
-  logging:
-    format: "json"  # or "text"
-    levels:
-      default: "info"
-      server: "debug"
-      storage: "warn"
-      auth: "error"
-  ```
-- **Log output can be plain text or JSON, both to console.**
-- **Log level filtering is per module** (e.g., `server`, `storage`, `auth`).
-- **The `default` key sets the fallback log level** for all modules not explicitly listed.
-- **No environment variables are required** for logging configuration; all settings are in the config file.
-- **Usage in code:**
+- **Log level is set via the `RUST_LOG` environment variable** (e.g., `RUST_LOG=debug ./s3-clone`).
+- If `RUST_LOG` is not set, the default log level is `info`.
+- Log output is plain text to the console.
+- Example usage in code:
   ```rust
-  use tracing::{info, warn, error, debug};
-  info!(target: "server", "Server started");
-  warn!(target: "storage", "Low disk space");
-  error!(target: "auth", user = "jan", "Login failed");
-  debug!(target: "api", request_id = 42, "Request received");
+  use log::{info, warn, error, debug};
+  info!("Server started");
+  warn!("Low disk space");
+  error!("Something went wrong: {}", "details");
+  debug!("Debug info: {:?}", (1, 2, 3));
   ```
-- **Log level filtering and output format are set up at startup based on the config file.**
+- **No per-module log levels or JSON output are supported.**
+- **No logging configuration is required in `config.yaml`**; just set `RUST_LOG` as needed.
 
 ---
 
@@ -299,14 +289,6 @@ storage:
 # Default region for new buckets (if not specified in request)
 region:
   default: "de-muc-01"
-
-# Logging configuration: set levels per component (server, storage, auth, etc.)
-logging:
-  format: "json"  # or "text"
-  levels:
-    server: "info"
-    storage: "warn"
-    auth: "debug"
 
 # Server configuration
 server:
