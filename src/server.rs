@@ -11,7 +11,7 @@ pub async fn run(cfg: Config) {
     .route("/healthz", get(healthz));
     let addr = format!("{}:{}", cfg.server.http.host, cfg.server.http.port);
 
-    info!("Starting HTTP server on {}", addr);
+    info!("Starting HTTP server on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

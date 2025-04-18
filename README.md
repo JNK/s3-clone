@@ -147,92 +147,92 @@ This project uses [`env_logger`](https://docs.rs/env_logger) and the standard [`
 ---
 
 ### 5. TLS & Server Setup
-- [ ] Implement HTTP server.
+- [x] Implement HTTP server.
 - [ ] Implement HTTPS server.
 - [ ] Integrate Let's Encrypt (DigitalOcean DNS only).
-- [ ] Add healthcheck endpoint.
+- [x] Add healthcheck endpoint.
 
 ---
 
-### 6. Authentication & Authorization
-- [ ] Implement AWSv4 signature verification.
-- [ ] Enforce IAM-like permissions for credentials.
-- [ ] Enforce bucket ACLs (public, IP, CORS).
+### 6. Bucket Operations
 
----
-
-### 7. Bucket Operations
-
-#### 7.1. Create Bucket
+#### 6.1. Create Bucket
 - [ ] Implement `PUT /{bucket}`.
 - [ ] **Validate**: Bucket name, existence, permissions.
 
-#### 7.2. List Buckets
+#### 6.2. List Buckets
 - [ ] Implement `GET /`.
 - [ ] **Validate**: Permissions.
 
-#### 7.3. Delete Bucket
+#### 6.3. Delete Bucket
 - [ ] Implement `DELETE /{bucket}`.
 - [ ] **Validate**: Bucket existence, emptiness, permissions.
 
-#### 7.4. List Objects in Bucket
+#### 6.4. List Objects in Bucket
 - [ ] Implement `GET /{bucket}`.
 - [ ] **Validate**: Bucket existence, permissions, query params.
 
-#### 7.5. List Objects V2
+#### 6.5. List Objects V2
 - [ ] Implement `GET /{bucket}?list-type=2`.
 - [ ] **Validate**: Bucket existence, permissions, query params (prefix, delimiter, continuation-token, etc.).
 
 ---
 
-### 8. Object Operations
+### 7. Object Operations
 
-#### 8.1. Put Object
+#### 7.1. Put Object
 - [ ] Implement `PUT /{bucket}/{object}`.
 - [ ] **Validate**: Bucket existence, object name, permissions, content headers.
 
-#### 8.2. Get Object
+#### 7.2. Get Object
 - [ ] Implement `GET /{bucket}/{object}`.
 - [ ] **Validate**: Bucket/object existence, permissions.
 
-#### 8.3. Get Object (Byte Range)
+#### 7.3. Get Object (Byte Range)
 - [ ] Implement `GET /{bucket}/{object}` with `Range` header.
 - [ ] **Validate**: Range header, object existence, permissions.
 
-#### 8.4. Delete Object
+#### 7.4. Delete Object
 - [ ] Implement `DELETE /{bucket}/{object}`.
 - [ ] **Validate**: Bucket/object existence, permissions.
 
 ---
 
-### 9. Multipart Uploads
+### 8. Multipart Uploads
 
-#### 9.1. Initiate Multipart Upload
+#### 8.1. Initiate Multipart Upload
 - [ ] Implement `POST /{bucket}/{object}?uploads`.
 - [ ] **Validate**: Bucket existence, permissions.
 
-#### 9.2. Upload Part
+#### 8.2. Upload Part
 - [ ] Implement `PUT /{bucket}/{object}?partNumber={PartNumber}&uploadId={UploadId}`.
 - [ ] **Validate**: UploadId, part number, permissions.
 
-#### 9.3. Complete Multipart Upload
+#### 8.3. Complete Multipart Upload
 - [ ] Implement `POST /{bucket}/{object}?uploadId={UploadId}`.
 - [ ] **Validate**: UploadId, parts, permissions.
 
-#### 9.4. Abort Multipart Upload
+#### 8.4. Abort Multipart Upload
 - [ ] Implement `DELETE /{bucket}/{object}?uploadId={UploadId}`.
 - [ ] **Validate**: UploadId, permissions.
 
-#### 9.5. List Multipart Uploads
+#### 8.5. List Multipart Uploads
 - [ ] Implement `GET /{bucket}?uploads`.
 - [ ] **Validate**: Bucket existence, permissions.
 
-#### 9.6. List Parts
+#### 8.6. List Parts
 - [ ] Implement `GET /{bucket}/{object}?uploadId={UploadId}`.
 - [ ] **Validate**: UploadId, permissions.
 
-#### 9.7. Multipart Expiry
+#### 8.7. Multipart Expiry
 - [ ] Implement periodic cleanup of expired multipart uploads.
+
+---
+
+### 9. Authentication & Authorization
+- Implement AWSv4 signature verification.
+- Enforce IAM-like permissions for credentials.
+- Enforce bucket ACLs (public, IP, CORS).
 
 ---
 
@@ -246,15 +246,13 @@ This project uses [`env_logger`](https://docs.rs/env_logger) and the standard [`
 - [ ] Implement presigned PUT logic.
 - [ ] **Validate**: Signature, expiry, permissions, IP (if restricted).
 
----
-
 ### 11. CORS Support
 
-#### 11.1. CORS Preflight
+#### 11.3. CORS Preflight
 - [ ] Implement `OPTIONS /{bucket}/{object}`.
 - [ ] **Validate**: CORS rules for bucket.
 
-#### 11.2. CORS Headers
+#### 11.4. CORS Headers
 - [ ] Add CORS headers to relevant responses.
 
 ---
@@ -296,6 +294,7 @@ server:
   http:
     enabled: true
     port: 9000
+    hhost: 0.0.0.0
   https:
     enabled: true
     port: 9443
@@ -335,64 +334,6 @@ config_reload:
 ```
 
 ---
-
-## Bucket and Multipart Metadata Storage
-
-### Bucket Metadata
-- Each bucket contains a metadata file at `_metadata/bucket.yaml` (relative to the bucket root).
-- This file is written at bucket creation and is read-only from a process perspective.
-- It stores:
-  - `name`: Bucket name
-  - `region`: Region (from config or request)
-  - `created`: Creation timestamp (ISO8601)
-  - `created_by`: Creator (user/credential)
-  - `acls`: Bucket ACLs (public, allowed_ips, etc.)
-  - `cors`: CORS rules (allowed origins, methods, etc.)
-- If ACLs or CORS are not specified, defaults from config are used.
-- **Object metadata is not stored here.**
-
-#### Example: `_metadata/bucket.yaml`
-```yaml
-name: example-bucket
-region: de-muc-01
-created: "2024-06-12T10:00:00Z"
-created_by: jan-niklas.kohlhaas
-acls:
-  public: false
-  allowed_ips: []
-cors:
-  allowed_origins: ["*"]
-  allowed_methods: ["GET", "PUT"]
-```
-
-### Multipart Upload Metadata
-- Each multipart upload has its own metadata file at `_metadata/multipart/<multipart-id>.yaml` (relative to the bucket root).
-- This file is created when a multipart upload is initiated and updated as parts are uploaded.
-- It stores:
-  - `key`: Object key being uploaded
-  - `upload_id`: Multipart upload ID
-  - `initiated`: Initiation timestamp (ISO8601)
-  - `initiated_by`: Creator (user/credential)
-  - `parts`: List of uploaded parts (number, etag, size, last_modified)
-
-#### Example: `_metadata/multipart/abc123.yaml`
-```yaml
-key: videos/bigfile.mp4
-upload_id: abc123
-initiated: "2024-06-12T10:05:00Z"
-initiated_by: jan-niklas.kohlhaas
-parts:
-  - part_number: 1
-    etag: "part1etag"
-    size: 5242880
-    last_modified: "2024-06-12T10:06:00Z"
-  - part_number: 2
-    etag: "part2etag"
-    size: 5242880
-    last_modified: "2024-06-12T10:07:00Z"
-```
-
---- 
 
 ## Workflow
 
