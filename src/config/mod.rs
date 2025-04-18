@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel};
-use std::time::{Instant, Duration};
-use sha2::{Digest, Sha256};
+use std::time::Duration;
+use sha2::Digest;
 use std::cmp::PartialEq;
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
