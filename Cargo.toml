@@ -8,3 +8,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.33"
 tracing = "0.1.41"
 env_logger = "0.11.8"
+log = "0.4.27"

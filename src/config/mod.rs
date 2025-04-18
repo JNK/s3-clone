@@ -1,9 +1,9 @@
+use log::debug;
 use serde::Deserialize;
-use std::fs;
-use std::path::{Path};
 use std::cmp::PartialEq;
-use tracing::{debug};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Config {
@@ -112,49 +112,48 @@ impl Config {
 
     /// Validate required fields and value ranges
     pub fn validate(&self) -> Result<(), String> {
-        debug!(name: "config", "validating config");
+        debug!("validating config");
         if self.storage.location.is_empty() {
-            debug!(name: "config", "storage.location is empty");
+            debug!("storage.location is empty");
             return Err("storage.location must not be empty".to_string());
         }
 
-
         if self.region.default.is_empty() {
-            debug!(name: "config", "region.default is empty");
+            debug!("region.default is empty");
             return Err("region.default must not be empty".to_string());
         }
         if self.server.http.port == 0 {
-            debug!(name: "config", "server.http.port is 0");
+            debug!("server.http.port is 0");
             return Err("server.http.port must be > 0".to_string());
         }
         if let Some(https) = &self.server.https {
             if https.port == 0 {
-                debug!(name: "config", "server.https.port is 0");
+                debug!("server.https.port is 0");
                 return Err("server.https.port must be > 0".to_string());
             }
             if let Some(le) = &https.letsencrypt {
                 if le.email.is_empty() || le.domains.is_empty() || le.do_token.is_empty() {
-                    debug!(name: "config", "letsencrypt config fields must not be empty");
+                    debug!("letsencrypt config fields must not be empty");
                     return Err("letsencrypt config fields must not be empty".to_string());
                 }
             }
         }
         if self.credentials.is_empty() {
-            debug!(name: "config", "credentials must not be empty");
+            debug!("credentials must not be empty");
             return Err("at least one credential must be defined".to_string());
         }
         for cred in &self.credentials {
             if cred.access_key.is_empty() || cred.secret_key.is_empty() {
-                debug!(name: "config", "credential access_key and secret_key must not be empty");
+                debug!("credential access_key and secret_key must not be empty");
                 return Err("credential access_key and secret_key must not be empty".to_string());
             }
         }
         if self.multipart.expiry_seconds == 0 {
-            debug!(name: "config", "multipart.expiry_seconds must be > 0");
+            debug!("multipart.expiry_seconds must be > 0");
             return Err("multipart.expiry_seconds must be > 0".to_string());
         }
 
-        debug!(name: "config", "config is valid");
+        debug!("config is valid");
 
         Ok(())
     }
