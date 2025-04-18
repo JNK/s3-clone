@@ -1,20 +1,8 @@
-// Make sure to add these dependencies in Cargo.toml:
-// serde = { version = "1.0.219", features = ["derive"] }
-// notify-rs = "4.0.16"
-// signal-hook = "0.3.17"
-
-use notify::{Watcher, RecursiveMode, RecommendedWatcher, Config as NotifyConfig, Event, EventKind};
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel};
-use std::time::Duration;
+use std::path::{Path};
 use std::cmp::PartialEq;
-use tracing::{info, warn, error, debug};
-use tracing_subscriber::{fmt, EnvFilter, reload, layer::SubscriberExt, Registry};
+use tracing::{debug};
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -38,10 +26,6 @@ pub struct StorageConfig {
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct RegionConfig {
     pub default: String,
-}
-
-pub struct LoggingReloadHandle {
-    pub handle: reload::Handle<EnvFilter, Registry>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -114,155 +98,10 @@ pub struct ConfigReload {
     pub fsevents: bool,
 }
 
-pub struct ConfigLoader {
-    pub config_path: PathBuf,
-    pub config: Arc<Mutex<Config>>,
-    reload_active: Arc<AtomicBool>,
-    logging_reload: Arc<Mutex<Option<LoggingReloadHandle>>>,
-}
-
-impl ConfigLoader {
-    /// Initialize the loader with a config file path
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let config_path = path.as_ref().to_path_buf();
-        let config = Config::load_from_file(&config_path)?;
-        let config = Arc::new(Mutex::new(config));
-        Ok(Self {
-            config_path,
-            config,
-            reload_active: Arc::new(AtomicBool::new(false)),
-            logging_reload: Arc::new(Mutex::new(None)),
-        })
-    }
-
-    /// Reload the config from the file
-    pub fn reload(&self) -> Result<bool, String> {
-        let new_config = Config::load_from_file(&self.config_path)?;
-        let mut cfg = self.config.lock().unwrap();
-        if *cfg == new_config {
-            Ok(false)
-        } else {
-            *cfg = new_config;
-            Ok(true)
-        }
-    }
-
-    /// Start listening for reload triggers (fsevents and SIGHUP) and call reload() on trigger.
-    pub fn start_listening_for_reloads(&self) {
-        self.reload_active.store(false, Ordering::SeqCst);
-        let (tx, rx) = channel();
-        self.reload_active.store(true, Ordering::SeqCst);
-        let config_path = self.config_path.clone();
-        let reload_active = self.reload_active.clone();
-        let config_reload = {
-            let cfg = self.config.lock().unwrap();
-            cfg.config_reload.clone()
-        };
-        if config_reload.fsevents {
-            let tx_fs = tx.clone();
-            let reload_active_fs = reload_active.clone();
-            thread::spawn(move || {
-                let (notify_tx, notify_rx) = channel();
-                let mut watcher = RecommendedWatcher::new(notify_tx, NotifyConfig::default())
-                    .expect("Failed to create watcher");
-                watcher
-                    .watch(config_path.as_ref(), RecursiveMode::NonRecursive)
-                    .expect("Failed to start watcher");
-                let debounce_window = Duration::from_millis(200);
-                let mut pending = false;
-                loop {
-                    if !reload_active_fs.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    let event = notify_rx.recv();
-                    match event {
-                        Ok(Ok(Event { kind: EventKind::Modify(_), .. })) => {
-                            pending = true;
-                        }
-                        Ok(_) => {},
-                        Err(_) => break,
-                    }
-                    // Debounce: wait for more events for debounce_window
-                    while pending {
-                        if notify_rx.recv_timeout(debounce_window).is_ok() {
-                            // More events, keep waiting
-                        } else {
-                            // Debounce window expired, trigger reload
-                            let _ = tx_fs.send(());
-                            pending = false;
-                        }
-                    }
-                }
-            });
-        }
-        if config_reload.sighup {
-            let tx_sighup = tx.clone();
-            let reload_active_sighup = reload_active.clone();
-            thread::spawn(move || {
-                use signal_hook::consts::signal::SIGHUP;
-                use signal_hook::iterator::Signals;
-                let mut signals = Signals::new(&[SIGHUP]).expect("Failed to register SIGHUP handler");
-                for _ in signals.forever() {
-                    if !reload_active_sighup.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    let _ = tx_sighup.send(());
-                }
-            });
-        }
-        let loader_main = self.clone();
-        thread::spawn(move || {
-            while loader_main.reload_active.load(Ordering::SeqCst) {
-                if rx.recv().is_ok() {
-                    match loader_main.reload() {
-                        Ok(true) => {
-                            println!("Config reloaded");
-                            loader_main.start_listening_for_reloads();
-                            break;
-                        }
-                        Ok(false) => {
-                            println!("Config unchanged, not reloaded");
-                        }
-                        Err(e) => {
-                            eprintln!("Config reload failed: {}", e);
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    pub fn update_log_filter(&self, reload_handle: &LoggingReloadHandle) {
-        let cfg = self.config.lock().unwrap();
-        let levels = &cfg.logging.levels;
-        let default = levels.get("default").cloned().unwrap_or_else(|| "info".to_string());
-        let filter_string = std::iter::once(default.clone())
-            .chain(
-                levels.iter()
-                    .filter(|(k,_)| *k != "default")
-                    .map(|(k, v)| format!("{k}={v}"))
-            )
-            .collect::<Vec<_>>()
-            .join(",");
-        let env_filter = EnvFilter::try_new(filter_string).unwrap();
-        reload_handle.handle.reload(env_filter).unwrap();
-    }
-}
-
-impl Clone for ConfigLoader {
-    fn clone(&self) -> Self {
-        Self {
-            config_path: self.config_path.clone(),
-            config: Arc::clone(&self.config),
-            reload_active: Arc::clone(&self.reload_active),
-            logging_reload: Arc::clone(&self.logging_reload),
-        }
-    }
-}
-
 impl Config {
     /// Load config from file and parse YAML
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        debug!("Loading config from {:?}", path.as_ref());
         let content = fs::read_to_string(path.as_ref())
             .map_err(|e| format!("Failed to read config file: {}", e))?;
         let config: Self = serde_yaml::from_str(&content)
@@ -273,38 +112,50 @@ impl Config {
 
     /// Validate required fields and value ranges
     pub fn validate(&self) -> Result<(), String> {
+        debug!(name: "config", "validating config");
         if self.storage.location.is_empty() {
+            debug!(name: "config", "storage.location is empty");
             return Err("storage.location must not be empty".to_string());
         }
+
+
         if self.region.default.is_empty() {
+            debug!(name: "config", "region.default is empty");
             return Err("region.default must not be empty".to_string());
         }
         if self.server.http.port == 0 {
+            debug!(name: "config", "server.http.port is 0");
             return Err("server.http.port must be > 0".to_string());
         }
         if let Some(https) = &self.server.https {
             if https.port == 0 {
+                debug!(name: "config", "server.https.port is 0");
                 return Err("server.https.port must be > 0".to_string());
             }
             if let Some(le) = &https.letsencrypt {
                 if le.email.is_empty() || le.domains.is_empty() || le.do_token.is_empty() {
+                    debug!(name: "config", "letsencrypt config fields must not be empty");
                     return Err("letsencrypt config fields must not be empty".to_string());
                 }
             }
         }
         if self.credentials.is_empty() {
+            debug!(name: "config", "credentials must not be empty");
             return Err("at least one credential must be defined".to_string());
         }
         for cred in &self.credentials {
             if cred.access_key.is_empty() || cred.secret_key.is_empty() {
+                debug!(name: "config", "credential access_key and secret_key must not be empty");
                 return Err("credential access_key and secret_key must not be empty".to_string());
             }
         }
         if self.multipart.expiry_seconds == 0 {
+            debug!(name: "config", "multipart.expiry_seconds must be > 0");
             return Err("multipart.expiry_seconds must be > 0".to_string());
         }
+
+        debug!(name: "config", "config is valid");
 
         Ok(())
     }
 }
-
